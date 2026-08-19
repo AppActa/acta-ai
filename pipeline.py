@@ -24,6 +24,7 @@ from clients.skill_client import (
     eh_pedido_criacao_skill,
     resolver_comando_skill,
 )
+from observability import observed_span
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,13 @@ def executar_fluxo_acta(
         "latencias_ms": {},
         "skill_ativa": active_skill,
     }
-    with mcp_tool_cache_context():
+    with mcp_tool_cache_context(), observed_span(
+        "acta_ai.pipeline",
+        {
+            "acta.id_ciclo_present": id_ciclo is not None,
+            "acta.skill_active": active_skill is not None,
+        },
+    ):
         final_state = fluxo_agentes.invoke(
             initial_state,
             config={

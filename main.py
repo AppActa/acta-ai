@@ -1,6 +1,7 @@
 """API HTTP do chatbot ACTA."""
 
 import uuid
+from time import perf_counter
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -20,13 +21,15 @@ from clients.skill_client import (
     excluir_skill,
     listar_skills,
 )
+from observability import instrument_fastapi_app, observed_span, record_chat_latency
 from pipeline import get_response
 
 app = FastAPI(
     title="ACTA AI API",
     description="API do chatbot gerencial do ACTA",
-    version="1.1.0",
+    version="1.1.1",
 )
+instrument_fastapi_app(app)
 
 
 class NovaSessaoRequest(BaseModel):
@@ -55,7 +58,7 @@ class CriarSkillRequest(BaseModel):
     conteudo_markdown: str = Field(..., min_length=1, max_length=5000)
 
 
-@app.get("/")
+@app.get("/health")
 def root() -> dict[str, str]:
     return {"message": "API do ACTA AI está online!"}
 
@@ -79,6 +82,8 @@ def nova_sessao(request: NovaSessaoRequest) -> dict[str, int | str]:
 
 @app.post("/chat")
 def chat(request: ChatRequest) -> dict[str, str]:
+    started = perf_counter()
+    status = "ok"
     message = request.message.strip()
     session_id = request.session_id.strip()
     if not message:
@@ -91,13 +96,23 @@ def chat(request: ChatRequest) -> dict[str, str]:
         empresa_id=request.empresa_id,
     ):
         try:
-            response = get_response(
-                message=message,
-                session_id=session_id,
-                id_ciclo=request.id_ciclo,
-            )
+            with observed_span(
+                "acta_ai.chat",
+                {"acta.id_ciclo_present": request.id_ciclo is not None},
+            ):
+                response = get_response(
+                    message=message,
+                    session_id=session_id,
+                    id_ciclo=request.id_ciclo,
+                )
         except SkillClientError as exc:
+            status = "invalid_skill"
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            record_chat_latency((perf_counter() - started) * 1000, status=status)
     return {"session_id": session_id, "resposta": response}
 
 

@@ -8,11 +8,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from time import perf_counter
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+
+from observability import observed_span, record_mcp_tool_call
 
 load_dotenv()
 
@@ -259,6 +262,7 @@ def _run_async_in_sync_context(tool_name: str, arguments: dict) -> dict | str:
 
 def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     """Executa uma tool no MCP ACTA preservando resultado estruturado."""
+    started = perf_counter()
     sanitized = {
         key: value for key, value in arguments.items() if value is not None and key != "id_empresa"
     }
@@ -287,19 +291,41 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
         logger.debug("Cache MCP da requisição: hit em %s", tool_name)
         cached_result = cache[cache_key]
         _record_tool_evidence(tool_name, sanitized, cached_result, cached=True)
+        record_mcp_tool_call(
+            tool_name,
+            (perf_counter() - started) * 1000,
+            status="ok",
+            cached=True,
+        )
         return cached_result
 
-    try:
-        result = _run_async_in_sync_context(tool_name, sanitized)
-    except Exception as exc:
-        _record_tool_evidence(
-            tool_name,
-            sanitized,
-            {"status": "error", "tipo": type(exc).__name__},
-            cached=False,
-        )
-        raise
+    with observed_span("acta_ai.mcp_tool", {"acta.mcp.tool": tool_name}):
+        try:
+            result = _run_async_in_sync_context(tool_name, sanitized)
+        except Exception as exc:
+            _record_tool_evidence(
+                tool_name,
+                sanitized,
+                {"status": "error", "tipo": type(exc).__name__},
+                cached=False,
+            )
+            record_mcp_tool_call(
+                tool_name,
+                (perf_counter() - started) * 1000,
+                status="error",
+                cached=False,
+            )
+            raise
     if cache is not None:
         cache[cache_key] = result
     _record_tool_evidence(tool_name, sanitized, result, cached=False)
+    status = "ok"
+    if isinstance(result, dict):
+        status = str(result.get("status", "ok"))
+    record_mcp_tool_call(
+        tool_name,
+        (perf_counter() - started) * 1000,
+        status=status,
+        cached=False,
+    )
     return result

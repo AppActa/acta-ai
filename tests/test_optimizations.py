@@ -84,6 +84,46 @@ def test_specialist_without_tool_call_gets_verified_evidence(monkeypatch) -> Non
     assert responses[0]["evidencias"][0]["tool"] == "predicoes_atingimento_meta"
 
 
+def test_indicators_are_formatted_from_confirmed_tool_evidence(monkeypatch) -> None:
+    monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "true")
+
+    def specialist(_estado: dict) -> str:
+        state_module.call_acta_tool("predicoes_atingimento_meta", {"id_ciclo": 1})
+        return "Meta 1 atingida, diferenca absoluta 5591 e variacao 8,02%."
+
+    monkeypatch.setattr(
+        state_module,
+        "REGISTRO_ESPECIALISTAS",
+        {"indicadores": specialist},
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_run_async_in_sync_context",
+        lambda _tool_name, _arguments: {
+            "status": "ok",
+            "id_ciclo": 1,
+            "metas": [
+                {
+                    "id_meta": 1,
+                    "objetivo": "Reduzir refugo",
+                    "status_atual": "ATINGIDA",
+                    "valor_base": 18.0,
+                    "valor_alvo": 5.0,
+                    "unidade": "%",
+                }
+            ],
+        },
+    )
+
+    with mcp_request_context(usuario_id=1, empresa_id=1):
+        responses, called = state_module.executar_especialistas(_state("indicadores"))
+
+    assert called == ["indicadores"]
+    assert "diferenca absoluta" not in responses[0]["resposta"].lower()
+    assert "Meta 1: Reduzir refugo" in responses[0]["resposta"]
+    assert responses[0]["evidencias"][0]["tool"] == "predicoes_atingimento_meta"
+
+
 @pytest.mark.parametrize(
     ("question", "expected"),
     [

@@ -30,6 +30,7 @@ from agents.relatorio_agent import relatorios_agent
 from agents.router import ALIASES_ESPECIALISTAS, ESPECIALISTAS_VALIDOS, router
 from agents.tarefas_agent import tarefas_agent
 from clients.mcp_acta_client import call_acta_tool, mcp_tool_evidence_context
+from observability import observed_span, record_pipeline_stage
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,11 @@ class Estado(MessagesState):
 def _latencias(estado: Estado, etapa: str, inicio: float) -> dict[str, float]:
     """Acrescenta a duração de uma etapa sem apagar medições anteriores."""
 
+    duration_ms = round((perf_counter() - inicio) * 1000, 2)
+    record_pipeline_stage(etapa, duration_ms)
     return {
         **estado.get("latencias_ms", {}),
-        etapa: round((perf_counter() - inicio) * 1000, 2),
+        etapa: duration_ms,
     }
 
 
@@ -694,6 +697,22 @@ def _garantir_evidencia_tool(
 ) -> str | None:
     """Executa uma consulta segura quando o modelo não realizou a chamada exigida."""
 
+    if name == "indicadores":
+        indicator_result = next(
+            (
+                item.get("resultado")
+                for item in evidence
+                if item.get("tool") == "predicoes_atingimento_meta"
+                and not (
+                    isinstance(item.get("resultado"), dict)
+                    and item["resultado"].get("status") == "error"
+                )
+            ),
+            None,
+        )
+        if isinstance(indicator_result, dict) and isinstance(indicator_result.get("metas"), list):
+            return _formatar_resultado_forcado(estado, indicator_result, specialist=name)
+
     has_required_indicator_evidence = any(
         item.get("tool") == "predicoes_atingimento_meta"
         and not (
@@ -738,7 +757,10 @@ def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[s
 
     def run(name: str) -> dict[str, Any]:
         inicio = perf_counter()
-        with mcp_tool_evidence_context() as evidence:
+        with mcp_tool_evidence_context() as evidence, observed_span(
+            "acta_ai.specialist",
+            {"acta.specialist": name},
+        ):
             try:
                 answer = REGISTRO_ESPECIALISTAS[name](estado)
                 forced_answer = _garantir_evidencia_tool(name, estado, evidence)
