@@ -1,106 +1,107 @@
 """Instâncias compartilhadas dos modelos utilizados pelos agentes ACTA."""
 
-import os
-
-from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-load_dotenv()
-
-nvidia_api_key = os.getenv("NVIDIA_API_KEY")
-groq_api_key = os.getenv("GROQ_API_KEY") or os.getenv("GROK_API_KEY")
-
-# Os IDs podem ser trocados pelo ambiente quando o catálogo hospedado mudar.
-PRIMARY_MODEL = os.getenv("ACTA_LLM_PRIMARY_MODEL", "deepseek-ai/deepseek-v4-pro")
-PRIMARY_FALLBACK_MODEL = os.getenv(
-    "ACTA_LLM_PRIMARY_FALLBACK_MODEL",
-    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+from config import (
+    ACTA_GROQ_FAST_MODEL,
+    ACTA_GROQ_MAX_RETRIES,
+    ACTA_GROQ_PRIMARY_MODEL,
+    ACTA_GROQ_REASONING_EFFORT,
+    ACTA_GROQ_TIMEOUT_SECONDS,
+    ACTA_LLM_FAST_FALLBACK_MODEL,
+    ACTA_LLM_FAST_MAX_TOKENS,
+    ACTA_LLM_FAST_MODEL,
+    ACTA_LLM_FAST_REASONING_BUDGET,
+    ACTA_LLM_PRIMARY_FALLBACK_MODEL,
+    ACTA_LLM_PRIMARY_MAX_TOKENS,
+    ACTA_LLM_PRIMARY_MODEL,
+    GROQ_API_KEY,
+    NVIDIA_API_KEY,
 )
-FAST_MODEL = os.getenv("ACTA_LLM_FAST_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
-FAST_FALLBACK_MODEL = os.getenv(
-    "ACTA_LLM_FAST_FALLBACK_MODEL",
-    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-)
-PRIMARY_MAX_TOKENS = int(os.getenv("ACTA_LLM_PRIMARY_MAX_TOKENS", "2048"))
-FAST_MAX_TOKENS = int(os.getenv("ACTA_LLM_FAST_MAX_TOKENS", "1024"))
-FAST_REASONING_BUDGET = int(os.getenv("ACTA_LLM_FAST_REASONING_BUDGET", "0"))
-GROQ_PRIMARY_MODEL = os.getenv("ACTA_GROQ_PRIMARY_MODEL", "openai/gpt-oss-120b")
-GROQ_FAST_MODEL = os.getenv("ACTA_GROQ_FAST_MODEL", "openai/gpt-oss-20b")
-GROQ_TIMEOUT_SECONDS = float(os.getenv("ACTA_GROQ_TIMEOUT_SECONDS", "15"))
-GROQ_MAX_RETRIES = int(os.getenv("ACTA_GROQ_MAX_RETRIES", "0"))
-GROQ_REASONING_EFFORT = os.getenv("ACTA_GROQ_REASONING_EFFORT", "low")
 
 
-llm_primary = ChatNVIDIA(
-    model=PRIMARY_MODEL,
+def _build_nvidia_llm(*, model, **kwargs):
+    """Create an NVIDIA model with thinking disabled in the API payload."""
+    model_kwargs = dict(kwargs.pop("model_kwargs", {}))
+    chat_template_kwargs = dict(model_kwargs.get("chat_template_kwargs", {}))
+    thinking_key = "thinking" if model.startswith("deepseek-ai/") else "enable_thinking"
+    chat_template_kwargs[thinking_key] = False
+    model_kwargs["chat_template_kwargs"] = chat_template_kwargs
+
+    return ChatNVIDIA(
+        model=model,
+        api_key=NVIDIA_API_KEY,
+        model_kwargs=model_kwargs,
+        **kwargs,
+    )
+
+
+llm_primary = _build_nvidia_llm(
+    model=ACTA_LLM_PRIMARY_MODEL,
     temperature=0.7,
     top_p=0.9,
-    max_completion_tokens=PRIMARY_MAX_TOKENS,
-    api_key=nvidia_api_key,
+    max_completion_tokens=ACTA_LLM_PRIMARY_MAX_TOKENS,
 )
 
-llm_primary_fallback = ChatNVIDIA(
-    model=PRIMARY_FALLBACK_MODEL,
-    api_key=nvidia_api_key,
+llm_primary_fallback = _build_nvidia_llm(
+    model=ACTA_LLM_PRIMARY_FALLBACK_MODEL,
     temperature=0.7,
     top_p=0.9,
-    max_completion_tokens=PRIMARY_MAX_TOKENS,
+    max_completion_tokens=ACTA_LLM_PRIMARY_MAX_TOKENS,
 )
 
-# Mantido como uma alternativa independente para usos futuros e diagnósticos.
-llm_tool_fallback = ChatNVIDIA(
-    model="nvidia/nemotron-3-super-120b-a12b",
-    api_key=nvidia_api_key,
-    temperature=0.7,
-    top_p=0.9,
-    max_completion_tokens=PRIMARY_MAX_TOKENS,
-)
-
-llm_fast_primary = ChatNVIDIA(
-    model=FAST_MODEL,
-    api_key=nvidia_api_key,
+llm_fast_primary = _build_nvidia_llm(
+    model=ACTA_LLM_FAST_MODEL,
     temperature=0.0,
     top_p=0.4,
-    max_completion_tokens=FAST_MAX_TOKENS,
-    model_kwargs={"reasoning_budget": FAST_REASONING_BUDGET},
+    max_completion_tokens=ACTA_LLM_FAST_MAX_TOKENS,
+    model_kwargs={"reasoning_budget": ACTA_LLM_FAST_REASONING_BUDGET},
 )
 
-llm_fast_fallback = ChatNVIDIA(
-    model=FAST_FALLBACK_MODEL,
-    api_key=nvidia_api_key,
+llm_fast_fallback = _build_nvidia_llm(
+    model=ACTA_LLM_FAST_FALLBACK_MODEL,
     temperature=0.0,
     top_p=0.4,
-    max_completion_tokens=FAST_MAX_TOKENS,
+    max_completion_tokens=ACTA_LLM_FAST_MAX_TOKENS,
 )
 
-if groq_api_key:
+if GROQ_API_KEY:
     llm_groq_primary = ChatGroq(
-        model=GROQ_PRIMARY_MODEL,
-        api_key=groq_api_key,
+        model=ACTA_GROQ_PRIMARY_MODEL,
+        api_key=GROQ_API_KEY,
         temperature=0.2,
-        max_tokens=PRIMARY_MAX_TOKENS,
-        timeout=GROQ_TIMEOUT_SECONDS,
-        max_retries=GROQ_MAX_RETRIES,
-        reasoning_effort=GROQ_REASONING_EFFORT,
+        max_tokens=ACTA_LLM_PRIMARY_MAX_TOKENS,
+        timeout=ACTA_GROQ_TIMEOUT_SECONDS,
+        max_retries=ACTA_GROQ_MAX_RETRIES,
+        reasoning_effort=ACTA_GROQ_REASONING_EFFORT,
         reasoning_format="hidden",
     )
     llm_groq_fast = ChatGroq(
-        model=GROQ_FAST_MODEL,
-        api_key=groq_api_key,
+        model=ACTA_GROQ_FAST_MODEL,
+        api_key=GROQ_API_KEY,
         temperature=0.0,
-        max_tokens=FAST_MAX_TOKENS,
-        timeout=GROQ_TIMEOUT_SECONDS,
-        max_retries=GROQ_MAX_RETRIES,
-        reasoning_effort=GROQ_REASONING_EFFORT,
+        max_tokens=ACTA_LLM_FAST_MAX_TOKENS,
+        timeout=ACTA_GROQ_TIMEOUT_SECONDS,
+        max_retries=ACTA_GROQ_MAX_RETRIES,
+        reasoning_effort=ACTA_GROQ_REASONING_EFFORT,
         reasoning_format="hidden",
     )
-    llm_agents = llm_groq_primary.with_fallbacks(
-        [llm_primary, llm_primary_fallback, llm_tool_fallback]
+    # Agentes com tools tentam Groq primeiro e usam NVIDIA NIM antes do fallback
+    # deterministico da pipeline.
+    llm_tool_agents = llm_groq_primary.with_fallbacks([llm_primary, llm_primary_fallback])
+    llm_tool_fast_agents = llm_groq_fast.with_fallbacks(
+        [llm_fast_primary, llm_fast_fallback]
     )
-    llm_fast_agents = llm_groq_fast.with_fallbacks([llm_fast_primary, llm_fast_fallback])
+    # Roteador, juiz, orquestrador e formatadores podem usar NIM como fallback,
+    # pois essas etapas não fazem chamadas de tools.
+    llm_text_agents = llm_groq_fast.with_fallbacks([llm_fast_primary, llm_fast_fallback])
 else:
-    llm_agents = llm_primary.with_fallbacks([llm_primary_fallback, llm_tool_fallback])
-    llm_fast_agents = llm_fast_primary.with_fallbacks([llm_fast_fallback])
+    llm_tool_agents = llm_primary
+    llm_tool_fast_agents = llm_fast_primary
+    llm_text_agents = llm_fast_primary.with_fallbacks([llm_fast_fallback])
 
-llm_fast = llm_fast_agents
+# Aliases de compatibilidade para integracoes existentes.
+llm_agents = llm_tool_agents
+llm_fast_agents = llm_tool_fast_agents
+llm_fast = llm_text_agents

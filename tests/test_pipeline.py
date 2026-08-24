@@ -3,7 +3,7 @@ from uuid import uuid4
 import pytest
 from langchain_core.messages import AIMessage
 
-import agents.helpers.estado as state_module
+import agents.estado as state_module
 import pipeline as pipeline_module
 from pipeline import fluxo_agentes, get_response
 from tools.ciclo_tools import ciclo_visao_geral

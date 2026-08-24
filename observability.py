@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
 
-from dotenv import load_dotenv
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -20,27 +18,28 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
+from config import (
+    acta_environment,
+    has_any_otel_endpoint,
+    observability_enabled,
+    observability_enabled_in_tests,
+    otel_service_name,
+    set_default_env,
+)
+
 _configured = False
-load_dotenv()
 
 
 def _is_enabled() -> bool:
-    if "pytest" in sys.modules and os.getenv("ACTA_OBSERVABILITY_IN_TESTS", "false").lower() != "true":
+    if "pytest" in sys.modules and not observability_enabled_in_tests():
         return False
-    if os.getenv("ACTA_OBSERVABILITY_ENABLED", "true").lower() in {"0", "false", "no"}:
+    if not observability_enabled():
         return False
-    return any(
-        os.getenv(name)
-        for name in (
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
-        )
-    )
+    return has_any_otel_endpoint()
 
 
 def configure_observability(default_service_name: str) -> bool:
-    """Configure OTLP exporters when OpenTelemetry env vars are present."""
+    """configura OTLP exporters quando OpenTelemetry env vars are present."""
 
     global _configured
     if _configured:
@@ -48,16 +47,14 @@ def configure_observability(default_service_name: str) -> bool:
     if not _is_enabled():
         return False
 
-    os.environ.setdefault("OTEL_SERVICE_NAME", default_service_name)
-    os.environ.setdefault("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+    set_default_env("OTEL_SERVICE_NAME", default_service_name)
+    set_default_env("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
 
-    service_name = os.getenv("OTEL_SERVICE_NAME", default_service_name)
-    environment = os.getenv("ACTA_ENV", "development")
     resource = Resource.create(
         {
-            "service.name": service_name,
+            "service.name": otel_service_name(default_service_name),
             "service.namespace": "acta",
-            "deployment.environment": environment,
+            "deployment.environment": acta_environment(),
         }
     )
 

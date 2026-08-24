@@ -1,11 +1,11 @@
-import os
 from uuid import uuid4
 
 import pytest
 from langchain_core.messages import HumanMessage
 
-from agents.helpers.estado import executar_especialistas
+from agents.estado import executar_especialistas
 from clients.mcp_acta_client import mcp_request_context
+from config import env_bool
 
 SPECIALIST_CASES = [
     ("rag", "Explique objetivamente o que é o ACTA e como ele usa o PDCA."),
@@ -30,7 +30,7 @@ EXPECTED_TERMS = {
 }
 
 pytestmark = pytest.mark.skipif(
-    os.getenv("ACTA_RUN_SPECIALISTS_INTEGRATION") != "1",
+    not env_bool("ACTA_RUN_SPECIALISTS_INTEGRATION", False),
     reason="Defina ACTA_RUN_SPECIALISTS_INTEGRATION=1 com MCP, bancos e NVIDIA ativos.",
 )
 

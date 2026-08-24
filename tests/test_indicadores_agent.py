@@ -1,6 +1,6 @@
-from agents.helpers.estado import REGISTRO_ESPECIALISTAS
+from agents.agents import ESPECIALISTAS_VALIDOS
+from agents.estado import REGISTRO_ESPECIALISTAS
 from agents.prompts.prompt_indicadores import INDICADORES_PROMPT_COMPLETO
-from agents.router import ESPECIALISTAS_VALIDOS
 from tools.indicador_tools import TOOLS
 
 

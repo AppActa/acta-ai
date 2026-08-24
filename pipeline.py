@@ -5,8 +5,7 @@ import logging
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from agents.guardrail import anonimizar_entrada, guardrail_entrada
-from agents.helpers.estado import (
+from agents.estado import (
     Estado,
     decidir_pos_guardrail_entrada,
     decidir_pos_roteador,
@@ -16,6 +15,7 @@ from agents.helpers.estado import (
     no_orquestrador,
     no_roteador,
 )
+from agents.guardrail import anonimizar_entrada, guardrail_entrada
 from agents.skill_builder import gerar_markdown_skill
 from clients.mcp_acta_client import mcp_identity_scope, mcp_tool_cache_context
 from clients.skill_client import (

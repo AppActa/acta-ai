@@ -4,10 +4,10 @@ import threading
 import pytest
 from langchain_core.messages import HumanMessage
 
+import agents.estado as state_module
 import agents.guardrail as guardrail_module
-import agents.helpers.estado as state_module
 import clients.mcp_acta_client as mcp_client
-from agents.helpers.estado import rotear_deterministicamente
+from agents.estado import rotear_deterministicamente
 from clients.mcp_acta_client import mcp_request_context
 
 

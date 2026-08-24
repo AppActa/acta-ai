@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage
 
-import agents.helpers.estado as state_module
+import agents.estado as state_module
 from clients import mcp_acta_client
 
 

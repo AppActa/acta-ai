@@ -2,20 +2,15 @@
 
 import json
 import logging
-import os
 import re
 from contextlib import suppress
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from langchain.agents import create_agent
-
-from agents.helpers.llms import llm_fast
-from agents.prompts.prompt_juiz import JUIZ_PROMPT_COMPLETO
+from agents.agents import juiz
+from config import judge_llm_enabled
 
 logger = logging.getLogger(__name__)
-
-juiz = create_agent(model=llm_fast, system_prompt=JUIZ_PROMPT_COMPLETO)
 
 _NUMBER_PATTERN = re.compile(r"(?<![\w/])\d+(?:[.,]\d+)*(?:\s*%)?")
 _INTERNAL_PATTERN = re.compile(
@@ -25,6 +20,17 @@ _INTERNAL_PATTERN = re.compile(
     r"orquestrador|(?:ciclo|tarefas|colaboradores|formularios|relatorios|predicoes|"
     r"faq)_[a-z0-9_]+)\b",
     flags=re.IGNORECASE,
+)
+
+_TEMPORAL_METADATA = re.compile(
+    r"\s*\(?\s*(?:atualizado|gerado|consultado|processado|analisado|verificado)"
+    r"\s+(?:em|as|às)\s+"
+    r"(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})?"
+    r"(?:\s*(?:as|às)\s*\d{1,2}:\d{2}(?::\d{2})?)?\s*\)?[.,;]?",
+    re.IGNORECASE,
+)
+_DATE_OR_TIME = re.compile(
+    r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}:\d{2}(?::\d{2})?)\b"
 )
 
 _LABELS = {
@@ -82,6 +88,17 @@ def _normalized_numbers(text: str) -> set[str]:
     return normalized
 
 
+def _remover_metadados_temporais(texto: str) -> str:
+    cleaned = _TEMPORAL_METADATA.sub("", texto)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([.,;])", r"\1", cleaned)
+    return cleaned.strip()
+
+
+def _texto_para_validacao(texto: str) -> str:
+    return _DATE_OR_TIME.sub("", _remover_metadados_temporais(texto))
+
+
 def _deterministic_problems(
     question: str,
     evidence: str,
@@ -91,8 +108,10 @@ def _deterministic_problems(
     if not answer.strip():
         problems.append("A resposta está vazia.")
 
-    allowed_numbers = _normalized_numbers(f"{question}\n{evidence}")
-    unsupported = sorted(_normalized_numbers(answer) - allowed_numbers)
+    allowed_numbers = _normalized_numbers(_texto_para_validacao(f"{question}\n{evidence}"))
+    unsupported = sorted(
+        _normalized_numbers(_texto_para_validacao(answer)) - allowed_numbers
+    )
     if unsupported:
         problems.append(
             "A resposta contém números sem suporte nas fontes: " + ", ".join(unsupported)
@@ -147,7 +166,21 @@ def _safe_fallback(
         and _is_clarification(str(item.get("resposta", "")))
     ]
     if clarifications and not has_evidence:
-        return str(clarifications[0]["resposta"]).strip()
+        return _remover_metadados_temporais(str(clarifications[0]["resposta"]))
+    if has_evidence:
+        valid_answers = [
+            item
+            for item in responses
+            if isinstance(item, dict)
+            and str(item.get("resposta", "")).strip()
+            and not _deterministic_problems(
+                question,
+                evidence_text,
+                str(item.get("resposta", "")),
+            )
+        ]
+        if valid_answers:
+            return _remover_metadados_temporais(str(valid_answers[0]["resposta"]))
     return "Não foi possível validar a resposta com segurança usando os dados disponíveis."
 
 
@@ -162,7 +195,8 @@ def avaliar_resposta(
 
     evidence = json.dumps(evidencias_tools, ensure_ascii=False, default=str)
     has_evidence = _usable_tool_evidence(evidencias_tools)
-    deterministic = _deterministic_problems(pergunta, evidence, resposta_orquestrador)
+    resposta_limpa = _remover_metadados_temporais(resposta_orquestrador)
+    deterministic = _deterministic_problems(pergunta, evidence, resposta_limpa)
     if not has_evidence and not _is_clarification(resposta_orquestrador):
         deterministic.append("Não há evidência de uma consulta bem-sucedida para sustentar a resposta.")
     fallback = _safe_fallback(
@@ -172,20 +206,20 @@ def avaliar_resposta(
         has_evidence=has_evidence,
     )
 
-    if os.getenv("ACTA_JUDGE_LLM", "false").lower() != "true":
+    if not judge_llm_enabled():
         if deterministic:
             return {
                 "status": "SUBSTITUIDO",
                 "problemas": deterministic,
                 "resposta": fallback,
             }
-        return {"status": "APROVADO", "problemas": [], "resposta": resposta_orquestrador}
+        return {"status": "APROVADO", "problemas": [], "resposta": resposta_limpa}
 
     payload = {
         "pergunta_original": pergunta,
         "respostas_especialistas": respostas_especialistas,
         "evidencias_tools": evidencias_tools,
-        "resposta_orquestrador": resposta_orquestrador,
+        "resposta_orquestrador": resposta_limpa,
         "alertas_deterministicos": deterministic,
     }
     try:
@@ -215,10 +249,12 @@ def avaliar_resposta(
             return {
                 "status": "APROVADO",
                 "problemas": judge_problems,
-                "resposta": resposta_orquestrador,
+                "resposta": resposta_limpa,
             }
 
-        corrected = _clean_model_text(str(decision.get("resposta_corrigida", "")))
+        corrected = _remover_metadados_temporais(
+            _clean_model_text(str(decision.get("resposta_corrigida", "")))
+        )
         corrected_problems = _deterministic_problems(pergunta, evidence, corrected)
         if not has_evidence and not _is_clarification(corrected):
             corrected_problems.append(

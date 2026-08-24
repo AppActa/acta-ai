@@ -1,21 +1,20 @@
 """Configuração e infraestrutura compartilhadas do MongoDB."""
 
-import os
 from datetime import UTC, datetime
 
-from dotenv import load_dotenv
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.collection import Collection
 
-load_dotenv()
+from config import MONGODB_DB_NAME, MONGODB_SESSIONS_COLLECTION, MONGODB_URI
 
-
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "acta_ai")
-MONGODB_SESSIONS_COLLECTION = os.getenv(
+__all__ = [
+    "MONGODB_DB_NAME",
     "MONGODB_SESSIONS_COLLECTION",
-    "chat_sessoes",
-)
+    "MONGODB_URI",
+    "agora",
+    "criar_cliente_mongo",
+    "criar_indices_chat_sessoes",
+]
 
 
 def agora() -> datetime:

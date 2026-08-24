@@ -76,9 +76,7 @@ def test_judge_rejects_correction_that_is_still_unsupported(monkeypatch) -> None
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert result["resposta"] == (
-        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
-    )
+    assert "10 tarefas atrasadas" in result["resposta"]
 
 
 def test_judge_failure_uses_specialist_answer(monkeypatch) -> None:
@@ -89,9 +87,7 @@ def test_judge_failure_uses_specialist_answer(monkeypatch) -> None:
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert result["resposta"] == (
-        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
-    )
+    assert "10 tarefas atrasadas" in result["resposta"]
     assert any("não pôde concluir" in problem for problem in result["problemas"])
 
 
@@ -115,9 +111,7 @@ def test_deterministic_mode_blocks_internal_details(monkeypatch) -> None:
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert result["resposta"] == (
-        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
-    )
+    assert result["resposta"] == "O ciclo está em andamento."
 
 
 def test_fallback_never_returns_a_narrated_tool_call(monkeypatch) -> None:
@@ -163,3 +157,61 @@ def test_percentage_unit_from_evidence_is_supported(monkeypatch) -> None:
 
     assert result["status"] == "APROVADO"
     assert result["resposta"] == "O valor base é 18%."
+
+
+def test_generated_timestamp_is_removed_without_rejecting_grounded_answer(monkeypatch) -> None:
+    monkeypatch.setenv("ACTA_JUDGE_LLM", "false")
+
+    result = judge_module.avaliar_resposta(
+        pergunta="Quantas tarefas estão atrasadas?",
+        respostas_especialistas=[
+            {"especialista": "tarefas", "resposta": "Existem 3 tarefas atrasadas."}
+        ],
+        evidencias_tools=[
+            {
+                "tool": "tarefas_atrasadas",
+                "argumentos": {"id_ciclo": 1},
+                "resultado": {
+                    "status": "ok",
+                    "id_ciclo": 1,
+                    "count": 3,
+                    "tarefas": [],
+                },
+                "cache": False,
+            }
+        ],
+        resposta_orquestrador=(
+            "Existem 3 tarefas atrasadas. Atualizado em 22/08/2026 às 14:33."
+        ),
+    )
+
+    assert result["status"] == "APROVADO"
+    assert "14:33" not in result["resposta"]
+
+
+def test_fallback_is_generic_without_structured_evidence(monkeypatch) -> None:
+    monkeypatch.setenv("ACTA_JUDGE_LLM", "false")
+
+    result = judge_module.avaliar_resposta(
+        pergunta="Quantas tarefas estão atrasadas?",
+        respostas_especialistas=[],
+        evidencias_tools=[
+            {
+                "tool": "tarefas_atrasadas",
+                "argumentos": {"id_ciclo": 1},
+                "resultado": {
+                    "status": "ok",
+                    "id_ciclo": 1,
+                    "count": 3,
+                    "tarefas": [],
+                },
+                "cache": False,
+            }
+        ],
+        resposta_orquestrador="Existem 20 tarefas atrasadas.",
+    )
+
+    assert result["status"] == "SUBSTITUIDO"
+    assert result["resposta"] == (
+        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
+    )

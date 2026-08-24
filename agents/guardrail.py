@@ -1,4 +1,3 @@
-import os
 import re
 import uuid
 
@@ -10,12 +9,13 @@ from agents.prompts.prompt_guardrail import (
     _PROMPT_GUARDRAIL,
     _RESPOSTAS_BLOQUEIO,
 )
+from config import guardrail_llm_output_review_enabled
 
 llm = llm_fast
 
 # A remoção de PII abaixo é sempre executada. A segunda revisão por LLM é
 # opcional porque acrescenta uma chamada sequencial a toda resposta do chatbot.
-LLM_OUTPUT_REVIEW = os.getenv("ACTA_GUARDRAIL_LLM_OUTPUT", "false").lower() == "true"
+LLM_OUTPUT_REVIEW = guardrail_llm_output_review_enabled
 
 
 PII = [
@@ -110,7 +110,8 @@ def guardrail_saida(resposta, mapa_pii, restaurar_pii=False):
 
     # 3. Revisão semântica opcional. Em produção ela pode ser reativada por
     # ACTA_GUARDRAIL_LLM_OUTPUT=true se a política exigir uma segunda LLM.
-    if LLM_OUTPUT_REVIEW:
+    should_review = LLM_OUTPUT_REVIEW() if callable(LLM_OUTPUT_REVIEW) else bool(LLM_OUTPUT_REVIEW)
+    if should_review:
         saida = llm.invoke(_PROMPT_COMPLIANCE.format(resposta=resposta)).content.strip()
         if "RESPOSTA:" in saida:
             resposta = saida.split("RESPOSTA:", 1)[1].strip() or resposta

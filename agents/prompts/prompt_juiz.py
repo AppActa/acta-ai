@@ -28,6 +28,12 @@ orquestrador antes que ela seja enviada ao usuário.
 - Se a pergunta usar um termo ambíguo, preserve os fatos confirmados dos possíveis itens e
   explique a ambiguidade; não escolha arbitrariamente o primeiro registro e não descarte dados úteis.
 - Uma preferência de formatação pode mudar somente estilo e estrutura, nunca fatos.
+- Não trate data ou horário de geração, consulta ou atualização como fato do ACTA. Se aparecerem,
+  remova-os da resposta corrigida.
+- Se houver um único trecho não sustentado, corrija ou remova somente esse trecho. Preserve os
+  demais fatos sustentados pelas evidências.
+- Nunca substitua uma resposta factual inteira por uma mensagem genérica quando houver evidência
+  bem-sucedida; use os fatos confirmados para produzir uma resposta curta e segura.
 
 ### SAÍDA
 Responda somente com um objeto JSON válido, sem Markdown:

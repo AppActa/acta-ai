@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 import socket
 import threading
 from collections.abc import Iterator
@@ -11,13 +10,18 @@ from dataclasses import dataclass
 from time import perf_counter
 from uuid import uuid4
 
-from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from config import (
+    acta_mcp_api_key,
+    acta_mcp_empresa_id,
+    acta_mcp_max_attempts,
+    acta_mcp_timeout_seconds,
+    acta_mcp_url,
+    acta_mcp_usuario_id,
+)
 from observability import observed_span, record_mcp_tool_call
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -111,30 +115,20 @@ def mcp_request_context(
             _request_context.reset(token)
 
 
-def _positive_env_int(name: str) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        raise MCPActaError(
-            f"{name} não foi configurado e não há contexto MCP ativo para a requisição."
-        )
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise MCPActaError(f"{name} deve ser um inteiro positivo.") from exc
-    if value <= 0:
-        raise MCPActaError(f"{name} deve ser um inteiro positivo.")
-    return value
-
-
 def _current_context() -> MCPRequestContext:
     context = _request_context.get()
     if context is not None:
         return context
-    return MCPRequestContext(
-        usuario_id=_positive_env_int("ACTA_MCP_USUARIO_ID"),
-        empresa_id=_positive_env_int("ACTA_MCP_EMPRESA_ID"),
-        trace_id=str(uuid4()),
-    )
+    try:
+        return MCPRequestContext(
+            usuario_id=acta_mcp_usuario_id(),
+            empresa_id=acta_mcp_empresa_id(),
+            trace_id=str(uuid4()),
+        )
+    except RuntimeError as exc:
+        raise MCPActaError(
+            f"{exc} Não há contexto MCP ativo para a requisição."
+        ) from exc
 
 
 def mcp_identity_scope() -> str:
@@ -153,7 +147,7 @@ def _headers() -> dict[str, str]:
         "X-Acta-Empresa-Id": str(context.empresa_id),
         "X-Trace-Id": context.trace_id,
     }
-    api_key = os.getenv("ACTA_MCP_API_KEY")
+    api_key = acta_mcp_api_key()
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     return headers
@@ -188,8 +182,8 @@ def _is_transient_error(exc: BaseException) -> bool:
 
 
 async def _call_tool_once(tool_name: str, arguments: dict) -> dict | str:
-    url = os.getenv("ACTA_MCP_URL", "http://127.0.0.1:8000/mcp")
-    timeout = float(os.getenv("ACTA_MCP_TIMEOUT_SECONDS", "30"))
+    url = acta_mcp_url()
+    timeout = acta_mcp_timeout_seconds()
 
     async with streamablehttp_client(
         url,
@@ -218,7 +212,7 @@ async def _call_tool_once(tool_name: str, arguments: dict) -> dict | str:
 
 
 async def _call_tool_async(tool_name: str, arguments: dict) -> dict | str:
-    max_attempts = max(1, int(os.getenv("ACTA_MCP_MAX_ATTEMPTS", "2")))
+    max_attempts = acta_mcp_max_attempts()
     for attempt in range(1, max_attempts + 1):
         try:
             return await _call_tool_once(tool_name, arguments)

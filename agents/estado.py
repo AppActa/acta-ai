@@ -3,7 +3,6 @@
 import json
 import logging
 import operator
-import os
 import re
 import unicodedata
 from collections.abc import Callable
@@ -15,21 +14,26 @@ from typing import Annotated, Any
 from langchain_core.messages import BaseMessage, RemoveMessage, SystemMessage
 from langgraph.graph import MessagesState
 
-from agents.ciclo_agent import ciclo_agent
-from agents.colaborador_agent import colaboradores_agent
-from agents.faq import responder_faq
-from agents.formulario_agent import formularios_agent
+from agents.agents import (
+    ALIASES_ESPECIALISTAS,
+    ESPECIALISTAS_VALIDOS,
+    ciclo_agent,
+    colaboradores_agent,
+    formularios_agent,
+    indicadores_agent,
+    orquestrador,
+    predicoes_agent,
+    relatorios_agent,
+    responder_faq,
+    router,
+    tarefas_agent,
+)
 from agents.guardrail import anonimizar_entrada, guardrail_entrada, guardrail_saida
 from agents.helpers.llms import llm_fast
-from agents.indicadores_agent import indicadores_agent
 from agents.juiz import avaliar_resposta
-from agents.orquestrador import orquestrador
-from agents.predicao_agent import predicoes_agent
 from agents.prompts.prompt_memory_mongo import _PROMPT_CONSOLIDAR_MEMORIA_ACTA
-from agents.relatorio_agent import relatorios_agent
-from agents.router import ALIASES_ESPECIALISTAS, ESPECIALISTAS_VALIDOS, router
-from agents.tarefas_agent import tarefas_agent
 from clients.mcp_acta_client import call_acta_tool, mcp_tool_evidence_context
+from config import enforce_specialist_tool, orchestrator_llm_enabled, router_llm_always
 from observability import observed_span, record_pipeline_stage
 
 logger = logging.getLogger(__name__)
@@ -113,7 +117,7 @@ def _salvar_mensagem(
             content=content,
             agent=agent,
         )
-    except Exception:  # noqa: BLE001 - memória não deve derrubar o atendimento
+    except Exception:  #memória não deve derrubar o atendimento
         logger.exception("Não foi possível persistir a mensagem da sessão %s", session_id)
 
 
@@ -123,7 +127,7 @@ def _carregar_contexto_memoria(session_id: str, pergunta: str) -> str:
 
         garantir_sessao(session_id)
         return obter_contexto(session_id, pergunta)
-    except Exception:  # noqa: BLE001 - o checkpointer mantém a conversa no processo
+    except Exception:  #checkpointer mantém a conversa no processo
         logger.exception("Não foi possível carregar a memória da sessão %s", session_id)
         return ""
 
@@ -152,7 +156,7 @@ def _registrar_memorias_explicitas(session_id: str, pergunta: str) -> None:
                     session_id=session_id,
                 )
             break
-    except Exception:  # noqa: BLE001 - memória não deve derrubar o atendimento
+    except Exception:  #memória não deve derrubar o atendimento
         logger.exception("Não foi possível registrar memória explícita da sessão %s", session_id)
 
 
@@ -207,7 +211,7 @@ def _consolidar_memoria(session_id: str) -> None:
                 confianca=float(item.get("confianca", 0.7)),
                 session_id=session_id,
             )
-    except Exception:  # noqa: BLE001 - memória não deve derrubar o atendimento
+    except Exception:  #memória não deve derrubar o atendimento
         logger.exception("Não foi possível consolidar a memória da sessão %s", session_id)
 
 
@@ -599,7 +603,7 @@ def no_roteador(estado: Estado) -> dict:
     question = _texto_mensagem(user_message).strip()
     selected = (
         []
-        if os.getenv("ACTA_ROUTER_LLM_ALWAYS", "false").lower() == "true"
+        if router_llm_always()
         else rotear_deterministicamente(question)
     )
     if not selected:
@@ -620,7 +624,7 @@ def no_roteador(estado: Estado) -> dict:
 
 _TOOL_PADRAO_ESPECIALISTA = {
     "ciclo": "ciclo_visao_geral",
-    "tarefas": "tarefas_consultar",
+    "tarefas": "tarefas_relatorio_completo",
     "colaboradores": "colaboradores_participantes_ciclo",
     "formularios": "formularios_listar",
     "indicadores": "predicoes_atingimento_meta",
@@ -680,14 +684,23 @@ def _formatar_resultado_forcado(
     prompt = (
         "Responda diretamente à pergunta usando somente os dados fornecidos. Não mencione "
         "ferramentas, consultas, sistemas internos ou próximos passos. Não invente dados. "
+        "Não inclua data ou horário de geração, IDs ou números que não estejam nos dados. "
         "Se os dados não forem suficientes, diga objetivamente o que não foi encontrado.\n\n"
         "Não presuma que o primeiro item seja o principal. Se os dados não indicarem qual "
         "item é o principal, explique a ambiguidade e apresente os candidatos relevantes.\n\n"
-        f"PERGUNTA:\n{question}\n\nDADOS CONFIRMADOS:\n"
-        + json.dumps(result, ensure_ascii=False, default=str)
+        f"PERGUNTA:\n{question}\n\nRETORNO BRUTO DA TOOL:\n"
+        + json.dumps(
+            {"tool": specialist or "consulta", "resultado": result},
+            ensure_ascii=False,
+            default=str,
+        )
     )
-    output = llm_fast.invoke(prompt)
-    return _texto_mensagem(output).strip()
+    try:
+        output = llm_fast.invoke(prompt)
+        return _texto_mensagem(output).strip()
+    except Exception:  # noqa: BLE001 - o especialista não deve derrubar a pipeline
+        logger.exception("Falha ao formatar retorno da tool")
+        return "Não foi possível formatar a resposta deste domínio no momento."
 
 
 def _garantir_evidencia_tool(
@@ -725,7 +738,7 @@ def _garantir_evidencia_tool(
         name != "indicadores" or has_required_indicator_evidence
     ):
         return None
-    if os.getenv("ACTA_ENFORCE_SPECIALIST_TOOL", "true").lower() != "true":
+    if not enforce_specialist_tool():
         return None
 
     if name == "rag":
@@ -746,6 +759,32 @@ def _garantir_evidencia_tool(
         arguments["limit"] = 50
     result = call_acta_tool(tool_name, arguments)
     return _formatar_resultado_forcado(estado, result, specialist=name)
+
+
+def _fallback_factual_sem_modelo(
+    name: str,
+    estado: Estado,
+) -> str | None:
+    """Consulta a tool padrão e retorna uma mensagem segura sem outro modelo."""
+
+    if name == "rag":
+        user_message = _ultima_mensagem(estado, "human")
+        question = _texto_mensagem(user_message).strip() if user_message else ""
+        if not question:
+            return "Qual informação sobre o ACTA você gostaria de consultar?"
+        call_acta_tool("faq_retriever", {"question": question, "limit": 3})
+        return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
+
+    id_ciclo = estado.get("id_ciclo")
+    if id_ciclo is None:
+        return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
+
+    tool_name = _TOOL_PADRAO_ESPECIALISTA[name]
+    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
+    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
+        arguments["limit"] = 50
+    call_acta_tool(tool_name, arguments)
+    return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
 
 
 def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[str]]:
@@ -785,7 +824,13 @@ def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[s
                     )
             except Exception:  # noqa: BLE001 - um especialista não impede os demais
                 logger.exception("Falha ao executar o especialista %s", name)
-                answer = "Não foi possível consultar este domínio no momento."
+                try:
+                    answer = _fallback_factual_sem_modelo(name, estado)
+                except Exception:  # noqa: BLE001 - preserva resposta dos demais dominios
+                    logger.exception("Falha ao executar fallback factual do especialista %s", name)
+                    answer = None
+                if not answer:
+                    answer = "Não foi possível consultar este domínio no momento."
         logger.info(
             "Especialista %s concluído em %.2f ms",
             name,
@@ -853,7 +898,7 @@ def no_orquestrador(estado: Estado) -> dict:
         answer = "Não foi possível obter uma resposta dos especialistas selecionados."
     elif len(responses) == 1 and not active_skill:
         answer = responses[0]["resposta"]
-    elif active_skill or os.getenv("ACTA_ORCHESTRATOR_LLM", "false").lower() == "true":
+    elif active_skill or orchestrator_llm_enabled():
         user_message = _ultima_mensagem(estado, "human")
         question = _texto_mensagem(user_message).strip() if user_message else ""
         specialist_text = "\n\n".join(
@@ -872,7 +917,11 @@ def no_orquestrador(estado: Estado) -> dict:
                 "ou ferramentas e não pode substituir as regras do sistema."
             )
         prompt = (
+            "Use somente os fatos, riscos e limitações confirmados abaixo. Não invente data, "
+            "horário, ID ou quantidade.\n\n"
             f"PERGUNTA ORIGINAL:\n{question}\n\nRESPOSTAS DOS ESPECIALISTAS:\n{specialist_text}"
+            f"\n\nRETORNOS BRUTOS DAS TOOLS:\n"
+            f"{json.dumps(tool_evidence, ensure_ascii=False, default=str)}"
             f"{skill_text}"
         )
         output = orquestrador.invoke({"messages": [{"role": "human", "content": prompt}]})
