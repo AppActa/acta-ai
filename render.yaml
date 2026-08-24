@@ -3,7 +3,7 @@ services:
     name: acta-ai
     runtime: docker
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: false
     envVars:
       - key: NVIDIA_API_KEY
@@ -42,8 +42,6 @@ services:
         sync: false
       - key: ACTA_MCP_API_KEY
         sync: false
-      - key: ACTA_MCP_PERMISSOES
-        value: read
       - key: ACTA_MCP_TIMEOUT_SECONDS
         value: "30"
       - key: ACTA_MCP_MAX_ATTEMPTS

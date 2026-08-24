@@ -9,7 +9,7 @@ client = TestClient(main.app)
 
 
 def test_health_endpoint() -> None:
-    response = client.get("/")
+    response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"message": "API do ACTA AI está online!"}
 
