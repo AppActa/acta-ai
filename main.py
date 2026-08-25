@@ -63,6 +63,13 @@ def root() -> dict[str, str]:
     return {"message": "API do ACTA AI está online!"}
 
 
+# Comentários para quem utilizar a API
+# Primeiramente, você deve criar uma requisição POST para o endpoint /nova_sessao, passando os parâmetros da classe NovaSessaoRequest, que são: usuario_id e empresa_id. Essa requisição retorna essas 3 variáveis: usuario_id, empresa_id e session_id.
+
+# Com essas variáveis junte mais essas duas: message e id_ciclo. Esses são os parâmetros da classe ChatRequest. Agora, crie uma requisição POST para o endpoint /chat, passando o ChatRequest. Ela retorna o session_id e a resposta.
+
+# Uma coisa importante, o usuário Mobile não terá acesso para criar/alterar dados! apenas consultar-los. Enquanto no Web, ele tem acesso a alterações, apenas envolvendo os ciclos em que ele está presente e como um gestor/administrador
+
 @app.post("/nova_sessao")
 def nova_sessao(request: NovaSessaoRequest) -> dict[str, int | str]:
     """Cria uma sessão persistente vinculada ao usuário e à empresa autenticados."""
