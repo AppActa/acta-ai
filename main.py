@@ -4,9 +4,15 @@ import uuid
 from time import perf_counter
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    File,
+    Form,
+    UploadFile
+    )
 from pydantic import BaseModel, Field
-
+from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
     configurar_consentimento,
@@ -67,6 +73,7 @@ def root() -> dict[str, str]:
 # Primeiramente, você deve criar uma requisição POST para o endpoint /nova_sessao, passando os parâmetros da classe NovaSessaoRequest, que são: usuario_id e empresa_id. Essa requisição retorna essas 3 variáveis: usuario_id, empresa_id e session_id.
 
 # Com essas variáveis junte mais essas duas: message e id_ciclo. Esses são os parâmetros da classe ChatRequest. Agora, crie uma requisição POST para o endpoint /chat, passando o ChatRequest. Ela retorna o session_id e a resposta.
+# Para utilizar audio, usar o POST /chat/audio
 
 # Uma coisa importante, o usuário Mobile não terá acesso para criar/alterar dados! apenas consultar-los. Enquanto no Web, ele tem acesso a alterações, apenas envolvendo os ciclos em que ele está presente e como um gestor/administrador
 
@@ -121,6 +128,53 @@ def chat(request: ChatRequest) -> dict[str, str]:
         finally:
             record_chat_latency((perf_counter() - started) * 1000, status=status)
     return {"session_id": session_id, "resposta": response}
+
+@app.post("/chat/audio")
+async def chat_audio(
+    audio: UploadFile = File(...),
+    session_id: str = Form(..., min_length=1),
+    usuario_id: int = Form(..., gt=0),
+    empresa_id: int = Form(..., gt=0),
+    id_ciclo: int | None = Form(default=None, gt=0),
+) -> dict[str, str]:
+    conteudo = await audio.read()
+
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="O arquivo de áudio está vazio.")
+
+    if len(conteudo) > 25 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="O arquivo de áudio não pode ultrapassar 25 MB.",
+        )
+
+    transcricao = transcrever_audio(
+        conteudo,
+        audio.filename or "audio.webm",
+        language="pt",
+    )
+
+    if not transcricao:
+        raise HTTPException(
+            status_code=422,
+            detail="Não foi possível transcrever o áudio.",
+        )
+
+    with mcp_request_context(
+        usuario_id=usuario_id,
+        empresa_id=empresa_id,
+    ):
+        resposta = get_response(
+            message=transcricao,
+            session_id=session_id,
+            id_ciclo=id_ciclo,
+        )
+
+    return {
+        "session_id": session_id,
+        "transcricao": transcricao, # Quando utilizar a transcrição, Mostrar a Tradução, para o usuário ver se isso é realmente o que ele quiz dizer
+        "resposta": resposta,
+    }
 
 
 @app.get("/memoria")
