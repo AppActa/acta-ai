@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: acta-ai
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: ACTA_LLM_PRIMARY_MODEL
+        value: deepseek-ai/deepseek-v4-pro
+      - key: ACTA_LLM_PRIMARY_FALLBACK_MODEL
+        value: deepseek-ai/deepseek-v4-flash
+      - key: ACTA_LLM_FAST_MODEL
+        value: deepseek-ai/deepseek-v4-flash
+      - key: ACTA_LLM_FAST_FALLBACK_MODEL
+        value: minimaxai/minimax-m3
+      - key: ACTA_LLM_PRIMARY_MAX_TOKENS
+        value: "2048"
+      - key: ACTA_LLM_FAST_MAX_TOKENS
+        value: "1024"
+      - key: ACTA_SPECIALIST_FEW_SHOTS
+        value: "false"
+      - key: ACTA_ROUTER_LLM_ALWAYS
+        value: "false"
+      - key: ACTA_ORCHESTRATOR_LLM
+        value: "false"
+      - key: ACTA_GUARDRAIL_LLM_OUTPUT
+        value: "false"
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: acta_ai
+      - key: MONGODB_SESSIONS_COLLECTION
+        value: chat_sessoes
+      - key: ACTA_STORE_RAW_PII
+        value: "false"
+      - key: ACTA_MAX_MESSAGE_CHARS
+        value: "8000"
+      - key: ACTA_MCP_URL
+        sync: false
+      - key: ACTA_MCP_API_KEY
+        sync: false
+      - key: ACTA_MCP_TIMEOUT_SECONDS
+        value: "30"
+      - key: ACTA_MCP_MAX_ATTEMPTS
+        value: "2"
