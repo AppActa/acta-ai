@@ -498,7 +498,7 @@ A rota de criação de sessão gera um `session_id` único para o usuário.
 Exemplo de requisição:
 
 ```cmd
-curl -X POST http://127.0.0.1:8200/nova_sessao ^
+curl -X POST http://127.0.0.1:8200/nova_conversa ^
 -H "Content-Type: application/json" ^
 -d "{\"usuario_id\": 1, \"empresa_id\": 1}"
 ```

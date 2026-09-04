@@ -174,7 +174,7 @@ def _parse_memory_json(text: str) -> dict[str, Any]:
     return value
 
 
-def _consolidar_memoria(session_id: str) -> None:
+def consolidar_memoria(session_id: str, *, forcar: bool = False) -> bool:
     """Atualiza o resumo incremental e sugere memórias longas conforme consentimento."""
 
     try:
@@ -184,9 +184,13 @@ def _consolidar_memoria(session_id: str) -> None:
             registrar_memoria,
         )
 
-        material = obter_material_resumo(session_id)
+        material = (
+            obter_material_resumo(session_id, forcar=True)
+            if forcar
+            else obter_material_resumo(session_id)
+        )
         if not material.get("deve_resumir") or not material.get("resumido_ate"):
-            return
+            return True
         prompt = _PROMPT_CONSOLIDAR_MEMORIA_ACTA.format(
             resumo_anterior=material.get("resumo_anterior") or "(sem resumo anterior)",
             conversa=material.get("conversa_formatada") or "",
@@ -211,8 +215,10 @@ def _consolidar_memoria(session_id: str) -> None:
                 confianca=float(item.get("confianca", 0.7)),
                 session_id=session_id,
             )
+        return True
     except Exception:  #memória não deve derrubar o atendimento
         logger.exception("Não foi possível consolidar a memória da sessão %s", session_id)
+        return False
 
 
 def _mensagens_para_especialista(
@@ -993,7 +999,7 @@ def no_guardrail_saida(estado: Estado) -> dict:
         content=final_answer,
         agent=source,
     )
-    _consolidar_memoria(estado["session_id"])
+    consolidar_memoria(estado["session_id"])
 
     messages: list[Any] = []
     if assistant_message is not None:

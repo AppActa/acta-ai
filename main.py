@@ -4,20 +4,17 @@ import uuid
 from time import perf_counter
 
 import uvicorn
-from fastapi import (
-    FastAPI,
-    HTTPException,
-    File,
-    Form,
-    UploadFile
-    )
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+
+from agents.estado import consolidar_memoria
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
     configurar_consentimento,
+    encerrar_sessao,
     excluir_memoria,
-    garantir_sessao,
+    listar_chats,
     listar_memorias,
     obter_consentimento,
 )
@@ -41,6 +38,7 @@ instrument_fastapi_app(app)
 class NovaSessaoRequest(BaseModel):
     usuario_id: int = Field(..., gt=0)
     empresa_id: int = Field(..., gt=0)
+    session_id_atual: str | None = Field(default=None, min_length=1)
 
 
 class ChatRequest(BaseModel):
@@ -70,28 +68,40 @@ def root() -> dict[str, str]:
 
 
 # Comentários para quem utilizar a API
-# Primeiramente, você deve criar uma requisição POST para o endpoint /nova_sessao, passando os parâmetros da classe NovaSessaoRequest, que são: usuario_id e empresa_id. Essa requisição retorna essas 3 variáveis: usuario_id, empresa_id e session_id.
+# Use POST /nova_conversa para gerar um novo session_id. A sessão só é persistida
+# quando a primeira mensagem é salva pelo fluxo de chat.
 
 # Com essas variáveis junte mais essas duas: message e id_ciclo. Esses são os parâmetros da classe ChatRequest. Agora, crie uma requisição POST para o endpoint /chat, passando o ChatRequest. Ela retorna o session_id e a resposta.
 # Para utilizar audio, usar o POST /chat/audio
 
 # Uma coisa importante, o usuário Mobile não terá acesso para criar/alterar dados! apenas consultar-los. Enquanto no Web, ele tem acesso a alterações, apenas envolvendo os ciclos em que ele está presente e como um gestor/administrador
 
-@app.post("/nova_sessao")
-def nova_sessao(request: NovaSessaoRequest) -> dict[str, int | str]:
-    """Cria uma sessão persistente vinculada ao usuário e à empresa autenticados."""
+@app.post("/nova_conversa")
+def nova_conversa(request: NovaSessaoRequest) -> dict[str, int | str | bool]:
+    """Encerra uma conversa não vazia e devolve um identificador ainda não persistido."""
 
     session_id = str(uuid.uuid4())
     with mcp_request_context(
         usuario_id=request.usuario_id,
         empresa_id=request.empresa_id,
     ):
-        garantir_sessao(session_id)
+        if request.session_id_atual:
+            consolidada = consolidar_memoria(request.session_id_atual, forcar=True)
+            encerrada = encerrar_sessao(request.session_id_atual) if consolidada else False
+        else:
+            encerrada = False
     return {
         "usuario_id": request.usuario_id,
         "empresa_id": request.empresa_id,
         "session_id": session_id,
+        "conversa_anterior_encerrada": encerrada,
     }
+
+
+@app.get("/listar_chats")
+def consultar_chats(usuario_id: int, empresa_id: int, limit: int = 50) -> dict:
+    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+        return {"chats": listar_chats(limit=limit)}
 
 
 @app.post("/chat")
@@ -131,7 +141,7 @@ def chat(request: ChatRequest) -> dict[str, str]:
 
 @app.post("/chat/audio")
 async def chat_audio(
-    audio: UploadFile = File(...),
+    audio: UploadFile = File(...),  # noqa: B008 - marcador exigido pelo FastAPI
     session_id: str = Form(..., min_length=1),
     usuario_id: int = Form(..., gt=0),
     empresa_id: int = Form(..., gt=0),
