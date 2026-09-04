@@ -14,7 +14,7 @@ def test_health_endpoint() -> None:
     assert response.json() == {"message": "API do ACTA AI está online!"}
 
 
-def test_new_session_persists_authenticated_owner(monkeypatch) -> None:
+def test_new_conversation_returns_unpersisted_session(monkeypatch) -> None:
     calls = []
 
     def fake_context(**kwargs):
@@ -22,20 +22,30 @@ def test_new_session_persists_authenticated_owner(monkeypatch) -> None:
         return nullcontext()
 
     monkeypatch.setattr(main, "mcp_request_context", fake_context)
-    monkeypatch.setattr(
-        main, "garantir_sessao", lambda session_id: calls.append(("session", session_id))
-    )
-
-    response = client.post("/nova_sessao", json={"usuario_id": 3, "empresa_id": 4})
+    response = client.post("/nova_conversa", json={"usuario_id": 3, "empresa_id": 4})
     assert response.status_code == 200
     body = response.json()
     UUID(body["session_id"])
     assert body["usuario_id"] == 3
     assert body["empresa_id"] == 4
-    assert calls == [
-        ("context", {"usuario_id": 3, "empresa_id": 4}),
-        ("session", body["session_id"]),
-    ]
+    assert body["conversa_anterior_encerrada"] is False
+    assert calls == [("context", {"usuario_id": 3, "empresa_id": 4})]
+
+
+def test_new_conversation_keeps_previous_chat_open_when_summary_fails(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
+    monkeypatch.setattr(main, "consolidar_memoria", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(main, "encerrar_sessao", lambda session_id: calls.append(session_id) or True)
+
+    response = client.post(
+        "/nova_conversa",
+        json={"usuario_id": 3, "empresa_id": 4, "session_id_atual": "session-previous"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["conversa_anterior_encerrada"] is False
+    assert calls == []
 
 
 def test_chat_requires_authenticated_identity() -> None:
