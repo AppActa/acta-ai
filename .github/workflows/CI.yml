@@ -9,6 +9,10 @@ on:
 jobs:
   qualidade:
     runs-on: ubuntu-latest
+    env:
+      # O projeto expõe módulos no diretório raiz (por exemplo, main e agents).
+      # O uv não instala este repositório como pacote porque package = false.
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
@@ -19,4 +23,4 @@ jobs:
 
       - run: uv sync --extra dev
       - run: uv run ruff check .
-      - run: uv run pytest
+      - run: uv run python -m pytest
