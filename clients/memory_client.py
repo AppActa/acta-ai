@@ -49,8 +49,16 @@ def obter_contexto(session_id: str, pergunta: str) -> str:
     return str(result.get("contexto", ""))
 
 
-def obter_material_resumo(session_id: str) -> dict[str, Any]:
-    return _dict_result("memoria_material_resumo", {"session_id": session_id})
+def obter_material_resumo(session_id: str, *, forcar: bool = False) -> dict[str, Any]:
+    return _dict_result("memoria_material_resumo", {"session_id": session_id, "forcar": forcar})
+
+
+def encerrar_sessao(session_id: str) -> bool:
+    return bool(_dict_result("memoria_encerrar_sessao", {"session_id": session_id}).get("encerrada"))
+
+
+def listar_chats(limit: int = 50) -> list[dict[str, Any]]:
+    return list(_dict_result("memoria_listar_chats", {"limit": limit}).get("chats", []))
 
 
 def atualizar_resumo(session_id: str, resumo: str, resumido_ate: str | datetime) -> None:
