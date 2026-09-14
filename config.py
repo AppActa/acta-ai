@@ -93,6 +93,8 @@ MONGODB_SESSIONS_COLLECTION = env_str("MONGODB_SESSIONS_COLLECTION", "chat_sesso
 ACTA_MCP_DEFAULT_URL = "http://127.0.0.1:8000/mcp"
 ACTA_MCP_DEFAULT_TIMEOUT_SECONDS = 30.0
 ACTA_MCP_DEFAULT_MAX_ATTEMPTS = 2
+ACTA_A2A_DEFAULT_URL = "http://127.0.0.1:8100/"
+ACTA_A2A_DEFAULT_TIMEOUT_SECONDS = 45.0
 
 
 def acta_mcp_url() -> str:
@@ -109,6 +111,14 @@ def acta_mcp_timeout_seconds() -> float:
 
 def acta_mcp_max_attempts() -> int:
     return max(1, env_int("ACTA_MCP_MAX_ATTEMPTS", ACTA_MCP_DEFAULT_MAX_ATTEMPTS))
+
+
+def acta_a2a_url() -> str:
+    return str(env_str("ACTA_A2A_URL", ACTA_A2A_DEFAULT_URL))
+
+
+def acta_a2a_timeout_seconds() -> float:
+    return env_float("ACTA_A2A_TIMEOUT_SECONDS", ACTA_A2A_DEFAULT_TIMEOUT_SECONDS)
 
 
 def acta_mcp_usuario_id() -> int:

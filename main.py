@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from agents.estado import consolidar_memoria
+from clients.a2a_client import A2ALessonClientError
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
@@ -128,10 +129,14 @@ def chat(request: ChatRequest) -> dict[str, str]:
                     message=message,
                     session_id=session_id,
                     id_ciclo=request.id_ciclo,
+                    empresa_id=request.empresa_id,
                 )
         except SkillClientError as exc:
             status = "invalid_skill"
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except A2ALessonClientError as exc:
+            status = "a2a_unavailable"
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception:
             status = "error"
             raise
@@ -174,11 +179,15 @@ async def chat_audio(
         usuario_id=usuario_id,
         empresa_id=empresa_id,
     ):
-        resposta = get_response(
-            message=transcricao,
-            session_id=session_id,
-            id_ciclo=id_ciclo,
-        )
+        try:
+            resposta = get_response(
+                message=transcricao,
+                session_id=session_id,
+                id_ciclo=id_ciclo,
+                empresa_id=empresa_id,
+            )
+        except A2ALessonClientError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return {
         "session_id": session_id,

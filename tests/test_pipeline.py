@@ -385,3 +385,34 @@ def test_assisted_creation_stops_on_prompt_injection(monkeypatch) -> None:
     )
 
     assert response == "Solicitação bloqueada."
+
+
+def test_lesson_request_is_answered_by_a2a_before_the_graph(monkeypatch) -> None:
+    received = []
+    monkeypatch.setattr(
+        pipeline_module,
+        "enviar_pedido_licao",
+        lambda **kwargs: received.append(kwargs) or "Resumo das lições.",
+    )
+    monkeypatch.setattr(
+        pipeline_module.fluxo_agentes,
+        "invoke",
+        lambda *_args, **_kwargs: pytest.fail("O grafo não deve executar para lições aprendidas"),
+    )
+
+    response = get_response(
+        "Resuma as lições aprendidas do ciclo.",
+        f"teste::{uuid4()}",
+        id_ciclo=7,
+        empresa_id=4,
+    )
+
+    assert response == "Resumo das lições."
+    assert received == [
+        {
+            "skill": "resumir_licao",
+            "mensagem": "Resuma as lições aprendidas do ciclo.",
+            "empresa_id": 4,
+            "id_ciclo": 7,
+        }
+    ]

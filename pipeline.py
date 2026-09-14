@@ -17,6 +17,10 @@ from agents.estado import (
 )
 from agents.guardrail import anonimizar_entrada, guardrail_entrada
 from agents.skill_builder import gerar_markdown_skill
+from clients.a2a_client import (
+    enviar_pedido_licao,
+    identificar_pedido_licao,
+)
 from clients.mcp_acta_client import mcp_identity_scope, mcp_tool_cache_context
 from clients.skill_client import (
     SkillClientError,
@@ -86,10 +90,21 @@ def executar_fluxo_acta(
     pergunta_usuario: str,
     session_id: str,
     id_ciclo: int | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
     raw_question = pergunta_usuario.strip()
+    pedido_licao = identificar_pedido_licao(raw_question)
+    if pedido_licao:
+        if empresa_id is None or empresa_id <= 0:
+            raise ValueError("empresa_id é obrigatório para consultar lições aprendidas.")
+        return enviar_pedido_licao(
+            skill=pedido_licao,
+            mensagem=raw_question,
+            empresa_id=empresa_id,
+            id_ciclo=id_ciclo,
+        )
     if eh_pedido_criacao_skill(raw_question):
         return _criar_skill_pelo_chatbot(raw_question)
 
@@ -155,7 +170,13 @@ def get_response(
     message: str,
     session_id: str,
     id_ciclo: int | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Mantém o contrato utilizado pela API FastAPI."""
 
-    return executar_fluxo_acta(message, session_id, id_ciclo=id_ciclo)
+    return executar_fluxo_acta(
+        message,
+        session_id,
+        id_ciclo=id_ciclo,
+        empresa_id=empresa_id,
+    )
