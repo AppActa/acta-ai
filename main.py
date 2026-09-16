@@ -63,6 +63,11 @@ class CriarSkillRequest(BaseModel):
     conteudo_markdown: str = Field(..., min_length=1, max_length=5000)
 
 
+def _chat_http_exception(exc: SkillClientError | A2ALessonClientError) -> HTTPException:
+    status_code = 400 if isinstance(exc, SkillClientError) else 503
+    return HTTPException(status_code=status_code, detail=str(exc))
+
+
 @app.get("/health")
 def root() -> dict[str, str]:
     return {"message": "API do ACTA AI está online!"}
@@ -133,10 +138,10 @@ def chat(request: ChatRequest) -> dict[str, str]:
                 )
         except SkillClientError as exc:
             status = "invalid_skill"
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise _chat_http_exception(exc) from exc
         except A2ALessonClientError as exc:
             status = "a2a_unavailable"
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise _chat_http_exception(exc) from exc
         except Exception:
             status = "error"
             raise
@@ -186,8 +191,8 @@ async def chat_audio(
                 id_ciclo=id_ciclo,
                 empresa_id=empresa_id,
             )
-        except A2ALessonClientError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except (SkillClientError, A2ALessonClientError) as exc:
+            raise _chat_http_exception(exc) from exc
 
     return {
         "session_id": session_id,
