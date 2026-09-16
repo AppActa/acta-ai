@@ -121,6 +121,10 @@ def acta_a2a_timeout_seconds() -> float:
     return env_float("ACTA_A2A_TIMEOUT_SECONDS", ACTA_A2A_DEFAULT_TIMEOUT_SECONDS)
 
 
+def acta_a2a_api_key() -> str | None:
+    return env_str("ACTA_A2A_API_KEY")
+
+
 def acta_mcp_usuario_id() -> int:
     return required_positive_int("ACTA_MCP_USUARIO_ID")
 

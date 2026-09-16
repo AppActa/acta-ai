@@ -25,6 +25,7 @@ def test_summary_request_uses_company_and_cycle_in_a2a_message(monkeypatch) -> N
     def fake_urlopen(request, timeout):
         sent["url"] = request.full_url
         sent["timeout"] = timeout
+        sent["authorization"] = request.headers.get("Authorization")
         sent["payload"] = json.loads(request.data)
         yield _RespostaHTTP(
             {
@@ -39,6 +40,7 @@ def test_summary_request_uses_company_and_cycle_in_a2a_message(monkeypatch) -> N
         )
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setenv("ACTA_A2A_API_KEY", "chave-de-teste")
 
     response = enviar_pedido_licao(
         skill="resumir_licao",
@@ -50,5 +52,6 @@ def test_summary_request_uses_company_and_cycle_in_a2a_message(monkeypatch) -> N
     assert response == "Resumo pronto."
     assert sent["url"] == "http://127.0.0.1:8100/"
     assert sent["timeout"] == 45.0
+    assert sent["authorization"] == "Bearer chave-de-teste"
     payload = json.loads(sent["payload"]["params"]["message"]["parts"][0]["text"])
     assert payload == {"skill": "resumir_licao", "id_empresa": 4, "id_ciclo": 7}

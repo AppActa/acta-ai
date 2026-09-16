@@ -9,7 +9,7 @@ import urllib.request
 from typing import Any
 from uuid import uuid4
 
-from config import acta_a2a_timeout_seconds, acta_a2a_url
+from config import acta_a2a_api_key, acta_a2a_timeout_seconds, acta_a2a_url
 
 _INVALID_RESPONSE = "O agente de lições aprendidas retornou uma resposta inválida."
 
@@ -56,10 +56,14 @@ def enviar_pedido_licao(
             }
         },
     }
+    headers = {"Content-Type": "application/json"}
+    api_key = acta_a2a_api_key()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(
         acta_a2a_url(),
         data=json.dumps(requisicao).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
