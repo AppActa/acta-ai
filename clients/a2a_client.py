@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-import urllib.error
 import urllib.request
 from typing import Any
 from uuid import uuid4
 
 from config import acta_a2a_timeout_seconds, acta_a2a_url
+
+_INVALID_RESPONSE = "O agente de lições aprendidas retornou uma resposta inválida."
 
 
 class A2ALessonClientError(RuntimeError):
@@ -64,7 +65,7 @@ def enviar_pedido_licao(
     try:
         with urllib.request.urlopen(request, timeout=acta_a2a_timeout_seconds()) as response:
             resposta = json.loads(response.read().decode())
-    except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError) as exc:
         raise A2ALessonClientError(
             "O agente de lições aprendidas está indisponível no momento."
         ) from exc
@@ -94,15 +95,15 @@ def _conteudo_por_skill(
 
 def _extrair_resposta(resposta: Any) -> str:
     if not isinstance(resposta, dict):
-        raise A2ALessonClientError("O agente de lições aprendidas retornou uma resposta inválida.")
+        raise A2ALessonClientError(_INVALID_RESPONSE)
     if resposta.get("error"):
         raise A2ALessonClientError("O agente de lições aprendidas não conseguiu atender a solicitação.")
     try:
         dados = resposta["result"]["artifacts"][0]["parts"][0]["data"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise A2ALessonClientError("O agente de lições aprendidas retornou uma resposta inválida.") from exc
+        raise A2ALessonClientError(_INVALID_RESPONSE) from exc
     if not isinstance(dados, dict):
-        raise A2ALessonClientError("O agente de lições aprendidas retornou uma resposta inválida.")
+        raise A2ALessonClientError(_INVALID_RESPONSE)
     for campo in ("resposta", "resumo", "mensagem"):
         valor = dados.get(campo)
         if isinstance(valor, str) and valor.strip():
