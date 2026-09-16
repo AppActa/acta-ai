@@ -709,6 +709,17 @@ def _formatar_resultado_forcado(
         return "Não foi possível formatar a resposta deste domínio no momento."
 
 
+def _consultar_tool_padrao(name: str, estado: Estado) -> Any:
+    id_ciclo = estado.get("id_ciclo")
+    if id_ciclo is None:
+        return None
+
+    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
+    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
+        arguments["limit"] = 50
+    return call_acta_tool(_TOOL_PADRAO_ESPECIALISTA[name], arguments)
+
+
 def _garantir_evidencia_tool(
     name: str,
     estado: Estado,
@@ -755,15 +766,10 @@ def _garantir_evidencia_tool(
         result = call_acta_tool("faq_retriever", {"question": question, "limit": 3})
         return _formatar_resultado_forcado(estado, result, specialist=name)
 
-    id_ciclo = estado.get("id_ciclo")
-    if id_ciclo is None:
+    if estado.get("id_ciclo") is None:
         return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
 
-    tool_name = _TOOL_PADRAO_ESPECIALISTA[name]
-    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
-    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
-        arguments["limit"] = 50
-    result = call_acta_tool(tool_name, arguments)
+    result = _consultar_tool_padrao(name, estado)
     return _formatar_resultado_forcado(estado, result, specialist=name)
 
 
@@ -781,15 +787,10 @@ def _fallback_factual_sem_modelo(
         call_acta_tool("faq_retriever", {"question": question, "limit": 3})
         return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
 
-    id_ciclo = estado.get("id_ciclo")
-    if id_ciclo is None:
+    if estado.get("id_ciclo") is None:
         return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
 
-    tool_name = _TOOL_PADRAO_ESPECIALISTA[name]
-    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
-    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
-        arguments["limit"] = 50
-    call_acta_tool(tool_name, arguments)
+    _consultar_tool_padrao(name, estado)
     return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
 
 
