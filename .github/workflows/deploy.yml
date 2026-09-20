@@ -1,0 +1,29 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # chama o deploy hook do render
+      - name: render
+        run: curl --fail --request POST "${{ secrets.RENDER_DEPLOY_URL }}"
+
+      # aguarda deploy da AI ficar disponível
+      # tenta 15 vezes, com 20 segundos de espera entre tentativas (5 minutos)
+      - name: buscar-resultado
+        run: |
+          for i in {1..15}; do
+
+            if curl --fail --silent --show-error https://acta-ai.onrender.com/health; then
+              exit 0
+            fi
+
+            sleep 20
+          done
+
+          exit 1
