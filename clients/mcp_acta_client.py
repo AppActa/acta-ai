@@ -131,6 +131,15 @@ def _current_context() -> MCPRequestContext:
         ) from exc
 
 
+def current_mcp_request_context() -> MCPRequestContext:
+    """Retorna a identidade autenticada ativa, sem fallback de ambiente."""
+
+    context = _request_context.get()
+    if context is None:
+        raise MCPActaError("Não há contexto autenticado ativo para a requisição.")
+    return context
+
+
 def mcp_identity_scope() -> str:
     """Escopo estável para caches locais, sem expor a identidade ao modelo."""
 

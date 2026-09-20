@@ -7,6 +7,7 @@ import re
 import unicodedata
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from contextvars import copy_context
 from time import perf_counter
 from typing import Annotated, Any
@@ -32,6 +33,7 @@ from agents.guardrail import anonimizar_entrada, guardrail_entrada, guardrail_sa
 from agents.helpers.llms import llm_fast
 from agents.juiz import avaliar_resposta
 from agents.prompts.prompt_memory_mongo import _PROMPT_CONSOLIDAR_MEMORIA_ACTA
+from clients.a2a_client import a2a_lesson_context
 from clients.mcp_acta_client import call_acta_tool, mcp_tool_evidence_context
 from config import enforce_specialist_tool, orchestrator_llm_enabled, router_llm_always
 from observability import observed_span, record_pipeline_stage
@@ -268,12 +270,15 @@ def _executar_rag(estado: Estado) -> str:
 
 
 def _executar_ciclo(estado: Estado) -> str:
-    return _executar_agente(
-        ciclo_agent,
-        estado,
-        "Responda somente a parte sobre o ciclo. Não repita tarefas ou pessoas que "
-        "serão tratadas por outros especialistas e não ofereça novas consultas.",
-    )
+    id_ciclo = estado.get("id_ciclo")
+    context = a2a_lesson_context(id_ciclo=id_ciclo) if id_ciclo is not None else nullcontext()
+    with context:
+        return _executar_agente(
+            ciclo_agent,
+            estado,
+            "Responda somente a parte sobre o ciclo. Não repita tarefas ou pessoas que "
+            "serão tratadas por outros especialistas e não ofereça novas consultas.",
+        )
 
 
 def _executar_tarefas(estado: Estado) -> str:

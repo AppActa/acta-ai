@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
-import re
-import unicodedata
 import urllib.request
-from typing import Any
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Literal
 from uuid import uuid4
 
+from clients.mcp_acta_client import MCPActaError, current_mcp_request_context
 from config import acta_a2a_api_key, acta_a2a_timeout_seconds, acta_a2a_url
 
 _INVALID_RESPONSE = "O agente de lições aprendidas retornou uma resposta inválida."
@@ -18,33 +20,33 @@ class A2ALessonClientError(RuntimeError):
     """Falha de comunicação ou resposta inválida do agente A2A."""
 
 
-def identificar_pedido_licao(mensagem: str) -> str | None:
-    """Identifica intenções de negócio encaminhadas ao agente de lições."""
+_active_cycle_id: ContextVar[int | None] = ContextVar(
+    "acta_ai_a2a_lesson_cycle_id",
+    default=None,
+)
 
-    normalizada = "".join(
-        caractere
-        for caractere in unicodedata.normalize("NFKD", mensagem.casefold())
-        if not unicodedata.combining(caractere)
-    )
-    if "licao aprendida" not in normalizada and "licoes aprendidas" not in normalizada:
-        return None
-    if re.search(r"\b(?:crie|criar|gere|gerar|registre|registrar)\b", normalizada):
-        return "criar_licao"
-    if re.search(r"\b(?:resuma|resumir|resumo)\b", normalizada):
-        return "resumir_licao"
-    return "pergunta_licao"
+
+@contextmanager
+def a2a_lesson_context(*, id_ciclo: int) -> Iterator[None]:
+    """Define o ciclo autorizado durante uma execução do especialista."""
+
+    if id_ciclo <= 0:
+        raise A2ALessonClientError("O ciclo ativo deve ser um inteiro positivo.")
+    token = _active_cycle_id.set(id_ciclo)
+    try:
+        yield
+    finally:
+        _active_cycle_id.reset(token)
 
 
 def enviar_pedido_licao(
     *,
-    skill: str,
-    mensagem: str,
-    empresa_id: int,
-    id_ciclo: int | None,
-) -> str:
-    """Envia uma intenção ao agente A2A e devolve sua resposta textual."""
+    skill: Literal["criar_licao", "resumir_licao", "pergunta_licao"],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Envia um payload já produzido pelo especialista ao agente A2A."""
 
-    conteudo = _conteudo_por_skill(skill, mensagem, empresa_id, id_ciclo)
+    conteudo = _payload_with_identity(skill, payload)
     requisicao = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
@@ -56,6 +58,11 @@ def enviar_pedido_licao(
             }
         },
     }
+    resposta = _post_jsonrpc(requisicao)
+    return _extrair_resposta(resposta)
+
+
+def _post_jsonrpc(requisicao: dict[str, Any]) -> Any:
     headers = {"Content-Type": "application/json"}
     api_key = acta_a2a_api_key()
     if api_key:
@@ -68,36 +75,45 @@ def enviar_pedido_licao(
     )
     try:
         with urllib.request.urlopen(request, timeout=acta_a2a_timeout_seconds()) as response:
-            resposta = json.loads(response.read().decode())
+            return json.loads(response.read().decode())
     except (OSError, json.JSONDecodeError) as exc:
         raise A2ALessonClientError(
             "O agente de lições aprendidas está indisponível no momento."
         ) from exc
-    return _extrair_resposta(resposta)
 
 
-def _conteudo_por_skill(
-    skill: str,
-    mensagem: str,
-    empresa_id: int,
-    id_ciclo: int | None,
-) -> dict[str, Any]:
-    conteudo: dict[str, Any] = {"skill": skill, "id_empresa": empresa_id}
-    if id_ciclo is not None:
-        conteudo["id_ciclo"] = id_ciclo
-    if skill == "criar_licao":
-        if id_ciclo is None:
-            raise A2ALessonClientError("Selecione um ciclo para criar uma lição aprendida.")
-        conteudo["contexto"] = mensagem
-        conteudo["expectativa"] = mensagem
-    elif skill == "pergunta_licao":
-        conteudo["pergunta"] = mensagem
-    elif skill != "resumir_licao":
+def _payload_with_identity(skill: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        identity = current_mcp_request_context()
+    except MCPActaError as exc:
+        raise A2ALessonClientError(str(exc)) from exc
+
+    conteudo = {"skill": skill, "id_empresa": identity.empresa_id, **payload}
+    if skill in {"criar_licao", "pergunta_licao"}:
+        conteudo["id_ciclo"] = _active_lesson_cycle_id()
+        _require_nonblank_fields(conteudo, "contexto", "expectativa") if skill == "criar_licao" else _require_nonblank_fields(conteudo, "pergunta")
+    elif skill == "resumir_licao":
+        id_ciclo = _active_cycle_id.get()
+        if id_ciclo is not None:
+            conteudo["id_ciclo"] = id_ciclo
+    else:
         raise A2ALessonClientError("Tipo de solicitação de lição aprendida inválido.")
     return conteudo
 
 
-def _extrair_resposta(resposta: Any) -> str:
+def _active_lesson_cycle_id() -> int:
+    id_ciclo = _active_cycle_id.get()
+    if id_ciclo is None:
+        raise A2ALessonClientError("Não há ciclo ativo para a solicitação de lição.")
+    return id_ciclo
+
+
+def _require_nonblank_fields(payload: dict[str, Any], *fields: str) -> None:
+    if any(not isinstance(payload.get(field), str) or not payload[field].strip() for field in fields):
+        raise A2ALessonClientError("A solicitação de lição contém campos obrigatórios vazios.")
+
+
+def _extrair_resposta(resposta: Any) -> dict[str, Any]:
     if not isinstance(resposta, dict):
         raise A2ALessonClientError(_INVALID_RESPONSE)
     if resposta.get("error"):
@@ -108,10 +124,6 @@ def _extrair_resposta(resposta: Any) -> str:
         raise A2ALessonClientError(_INVALID_RESPONSE) from exc
     if not isinstance(dados, dict):
         raise A2ALessonClientError(_INVALID_RESPONSE)
-    for campo in ("resposta", "resumo", "mensagem"):
-        valor = dados.get(campo)
-        if isinstance(valor, str) and valor.strip():
-            return valor.strip()
-    if dados.get("url"):
-        return f"Lição aprendida criada com sucesso. PDF: {dados['url']}"
-    raise A2ALessonClientError("O agente de lições aprendidas não retornou conteúdo.")
+    if not dados:
+        raise A2ALessonClientError("O agente de lições aprendidas não retornou conteúdo.")
+    return dados

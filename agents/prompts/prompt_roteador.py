@@ -24,7 +24,7 @@ AGENTES_DISPONIVEIS = {
     ),
     "ciclo": (
         "Situação geral do ciclo, fase, riscos, problemas, "
-        "causas, Ishikawa, participantes e relatório gerencial do ciclo."
+        "causas, Ishikawa, participantes, lições aprendidas e relatório gerencial do ciclo."
     ),
     "tarefas": (
         "Tarefas, ações, responsáveis, prazos, atrasos, conclusões, dependências, "
@@ -77,6 +77,7 @@ Você não responde à pergunta, não consulta tools e não explica a decisão.
 - Use no máximo três especialistas e não repita nomes.
 - Perguntas conceituais usam `rag`.
 - Dados gerais e diagnósticos do ciclo usam `ciclo`.
+- Criar, resumir ou consultar lições aprendidas usa `ciclo`.
 - Metas, indicadores, base, alvo, atingimento e comparações usam `indicadores`.
 - Prazos, atrasos e execução de tarefas usam `tarefas`.
 - Pessoas, cargos, áreas, carga e realocação usam `colaboradores`.

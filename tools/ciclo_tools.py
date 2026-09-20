@@ -103,25 +103,6 @@ def ciclos_adicionar_item_ishikawa(
 
 
 @tool
-def licoes_aprendidas_registrar(
-    id_ciclo: int,
-    titulo: str,
-    licao: str,
-    categoria: str | None = None,
-    tags: list[str] | None = None,
-) -> dict | str:
-    """Registra uma lição aprendida no ciclo autorizado."""
-    return call_mcp_tool(
-        "licoes_aprendidas_registrar",
-        id_ciclo=id_ciclo,
-        titulo=titulo,
-        licao=licao,
-        categoria=categoria,
-        tags=tags,
-    )
-
-
-@tool
 def treinamentos_criar(
     id_ciclo: int,
     id_responsavel: int,
@@ -155,6 +136,5 @@ TOOLS = [
     ciclo_relatorio_completo,
     ciclos_registrar_causa,
     ciclos_adicionar_item_ishikawa,
-    licoes_aprendidas_registrar,
     treinamentos_criar,
 ]

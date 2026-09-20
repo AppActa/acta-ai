@@ -387,17 +387,20 @@ def test_assisted_creation_stops_on_prompt_injection(monkeypatch) -> None:
     assert response == "Solicitação bloqueada."
 
 
-def test_lesson_request_is_answered_by_a2a_before_the_graph(monkeypatch) -> None:
-    received = []
+def test_lesson_request_is_routed_to_the_cycle_agent(monkeypatch) -> None:
+    _disable_external_memory(monkeypatch)
+    cycle_agent = FakeAgent("Resumo das lições.")
     monkeypatch.setattr(
-        pipeline_module,
-        "enviar_pedido_licao",
-        lambda **kwargs: received.append(kwargs) or "Resumo das lições.",
+        state_module,
+        "guardrail_entrada",
+        lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
+    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setattr(
-        pipeline_module.fluxo_agentes,
-        "invoke",
-        lambda *_args, **_kwargs: pytest.fail("O grafo não deve executar para lições aprendidas"),
+        state_module,
+        "guardrail_saida",
+        lambda answer, _: {"valido": True, "motivo": "saida_revisada", "mensagem": answer},
     )
 
     response = get_response(
@@ -408,11 +411,5 @@ def test_lesson_request_is_answered_by_a2a_before_the_graph(monkeypatch) -> None
     )
 
     assert response == "Resumo das lições."
-    assert received == [
-        {
-            "skill": "resumir_licao",
-            "mensagem": "Resuma as lições aprendidas do ciclo.",
-            "empresa_id": 4,
-            "id_ciclo": 7,
-        }
-    ]
+    assert len(cycle_agent.calls) == 1
+    assert not hasattr(pipeline_module, "enviar_pedido_licao")

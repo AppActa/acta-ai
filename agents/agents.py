@@ -21,6 +21,7 @@ from tools.colaborador_tools import TOOLS as COLABORADOR_TOOLS
 from tools.faq_tools import faq_retriever
 from tools.formulario_tools import TOOLS as FORMULARIO_TOOLS
 from tools.indicador_tools import TOOLS as INDICADORES_TOOLS
+from tools.licoes_tools import TOOLS as LICOES_A2A_TOOLS
 from tools.predicao_tools import TOOLS as PREDICAO_TOOLS
 from tools.relatorio_tools import TOOLS as RELATORIO_TOOLS
 from tools.tarefas_tools import TOOLS as TAREFAS_TOOLS
@@ -41,7 +42,7 @@ ALIASES_ESPECIALISTAS = {"faq": "rag"}
 
 ciclo_agent = create_agent(
     model=llm_tool_agents,
-    tools=CICLO_TOOLS,
+    tools=[*CICLO_TOOLS, *LICOES_A2A_TOOLS],
     system_prompt=CICLO_PROMPT_COMPLETO,
 )
 colaboradores_agent = create_agent(
