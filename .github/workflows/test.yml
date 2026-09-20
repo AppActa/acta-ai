@@ -1,4 +1,4 @@
-name: CI ACTA AI
+name: test
 
 on:
   workflow_dispatch:
@@ -60,9 +60,7 @@ jobs:
         run: uv export --locked --no-dev --format requirements.txt --output-file requirements-ci.txt
 
       - name: auditar dependências
-        uses: pypa/gh-action-pip-audit@v1.1.0
-        with:
-          inputs: requirements-ci.txt
+        run: uvx --from pip-audit pip-audit -r requirements-ci.txt
 
   startup:
     name: startup da aplicação
