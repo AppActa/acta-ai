@@ -124,6 +124,20 @@ def test_indicators_are_formatted_from_confirmed_tool_evidence(monkeypatch) -> N
     assert responses[0]["evidencias"][0]["tool"] == "predicoes_atingimento_meta"
 
 
+def test_default_specialist_tool_builds_standard_arguments(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        state_module,
+        "call_acta_tool",
+        lambda name, arguments: calls.append((name, arguments)) or {"status": "ok"},
+    )
+
+    result = state_module._consultar_tool_padrao("tarefas", _state("tarefas"))
+
+    assert result == {"status": "ok"}
+    assert calls == [("tarefas_relatorio_completo", {"id_ciclo": 1, "limit": 50})]
+
+
 @pytest.mark.parametrize(
     ("question", "expected"),
     [

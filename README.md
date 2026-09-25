@@ -2,17 +2,20 @@
 
 API FastAPI do assistente gerencial do ACTA. Este repositório recebe a mensagem do
 usuário, executa o fluxo LangGraph, aplica as proteções de entrada e saída e usa o
-`mcp-acta-ai` como única porta de acesso aos dados e à memória persistente.
+`mcp-acta-ai` para operações dos domínios ACTA e mantém capacidades próprias do
+chatbot — memória e skills pessoais — no ACTA AI.
 
 ## Visão rápida
 
 ```text
-Cliente HTTP → ACTA AI → LangGraph → MCP ACTA → PostgreSQL / MongoDB / Qdrant
+Cliente HTTP → ACTA AI → LangGraph → tools de domínio MCP
+                            ↘ memória / skills → MongoDB / Qdrant
 ```
 
-O `acta-ai` não recebe credenciais de banco. A identidade da requisição
-(`usuario_id` e `empresa_id`) é propagada ao MCP por cabeçalhos internos, que são
-validados pelo servidor MCP antes de qualquer consulta.
+A identidade da requisição (`usuario_id` e `empresa_id`) limita operações do ACTA AI
+e é propagada ao MCP por cabeçalhos internos para consultas e escritas de domínio.
+As credenciais de MongoDB/Qdrant da memória ficam na configuração do ACTA AI e nunca
+são expostas ao modelo. O FAQ usa a tool `faq_retriever` publicada pelo MCP.
 
 ## Documentação
 

@@ -25,9 +25,12 @@ TOOLS_CICLO_DISPONIVEIS = {
     "ciclos_adicionar_item_ishikawa": (
         "Adiciona uma causa a uma categoria do Ishikawa após solicitação explícita."
     ),
-    "licoes_aprendidas_registrar": (
-        "Registra uma lição aprendida após solicitação explícita."
+    "criar_licao_aprendida": (
+        "Cria uma lição aprendida detalhada e seu PDF a partir de contexto e expectativa "
+        "redigidos por você."
     ),
+    "resumir_licoes_aprendidas": "Resume as lições aprendidas do ciclo ativo.",
+    "consultar_licoes_aprendidas": "Consulta lições aprendidas do ciclo ativo.",
     "treinamentos_criar": (
         "Cria um treinamento e seus participantes após solicitação explícita."
     ),
@@ -60,6 +63,9 @@ causas-raiz. Uma análise de riscos pode exigir também a visão geral.
 
 Tools de escrita só podem ser chamadas após pedido explícito do usuário. Nunca
 deduza autorização, invente campos ausentes ou repita uma alteração já concluída.
+Para criar uma lição aprendida, consulte primeiro as evidências do ciclo e então
+chame `criar_licao_aprendida` com `contexto` factual e `expectativa` objetiva
+redigidos por você. Não copie a mensagem do usuário para esses campos.
 
 Não invente status, fase, metas, tarefas, responsáveis, causas, impactos ou
 participantes. Use somente as operações autorizadas. Se faltarem dados, informe

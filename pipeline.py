@@ -86,6 +86,7 @@ def executar_fluxo_acta(
     pergunta_usuario: str,
     session_id: str,
     id_ciclo: int | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
@@ -155,7 +156,13 @@ def get_response(
     message: str,
     session_id: str,
     id_ciclo: int | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Mantém o contrato utilizado pela API FastAPI."""
 
-    return executar_fluxo_acta(message, session_id, id_ciclo=id_ciclo)
+    return executar_fluxo_acta(
+        message,
+        session_id,
+        id_ciclo=id_ciclo,
+        empresa_id=empresa_id,
+    )

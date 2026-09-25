@@ -3,6 +3,7 @@
 import json
 import logging
 import operator
+import os
 import re
 import unicodedata
 from collections.abc import Callable
@@ -21,6 +22,7 @@ from agents.agents import (
     colaboradores_agent,
     formularios_agent,
     indicadores_agent,
+    licoes_agent,
     orquestrador,
     predicoes_agent,
     relatorios_agent,
@@ -33,14 +35,20 @@ from agents.helpers.llms import llm_fast
 from agents.juiz import avaliar_resposta
 from agents.prompts.prompt_memory_mongo import _PROMPT_CONSOLIDAR_MEMORIA_ACTA
 from clients.mcp_acta_client import call_acta_tool, mcp_tool_evidence_context
-from config import enforce_specialist_tool, orchestrator_llm_enabled, router_llm_always
+from config import ACTA_ENFORCE_SPECIALIST_TOOL
 from observability import observed_span, record_pipeline_stage
+from tools.licoes_tools import licoes_context
 
 logger = logging.getLogger(__name__)
 
+
+def _env_flag(name: str, default: bool) -> bool:
+    fallback = "true" if default else "false"
+    return os.getenv(name, fallback).lower() in {"1", "true", "yes", "y", "on"}
+
 _NARRATED_TOOL_PATTERN = re.compile(
     r"\b(?:vou\s+(?:consultar|executar|chamar)|chamando|tools?|ferramentas?|"
-    r"(?:ciclo|tarefas|colaboradores|formularios|relatorios|predicoes|faq)_[a-z0-9_]+)\b",
+    r"(?:ciclo|licoes|tarefas|colaboradores|formularios|relatorios|predicoes|faq)_[a-z0-9_]+)\b",
     flags=re.IGNORECASE,
 )
 
@@ -268,12 +276,37 @@ def _executar_rag(estado: Estado) -> str:
 
 
 def _executar_ciclo(estado: Estado) -> str:
-    return _executar_agente(
-        ciclo_agent,
-        estado,
-        "Responda somente a parte sobre o ciclo. Não repita tarefas ou pessoas que "
-        "serão tratadas por outros especialistas e não ofereça novas consultas.",
-    )
+    return _executar_agente(ciclo_agent, estado, "Responda somente sobre ciclo, sem abordar lições aprendidas.")
+
+
+def _executar_licoes(estado: Estado) -> str:
+    id_ciclo = estado.get("id_ciclo")
+    if id_ciclo is None:
+        return "Informe o ciclo para consultar lições aprendidas."
+    user_message = _ultima_mensagem(estado, "human")
+    question = _texto_mensagem(user_message).strip() if user_message else ""
+    normalized = unicodedata.normalize("NFKD", question.lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    if any(marker in normalized for marker in ("crie uma licao", "criar uma licao", "registre uma licao", "gere uma licao")):
+        with licoes_context(id_ciclo=id_ciclo):
+            return _executar_agente(licoes_agent, estado, "Crie uma lição aprendida para o ciclo ativo.")
+    tool_name = "licoes_resumir" if any(marker in normalized for marker in ("resuma", "resumo das licoes", "sintetize as licoes")) else "licoes_perguntar"
+    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
+    if tool_name == "licoes_perguntar":
+        arguments["pergunta"] = question
+    result = call_acta_tool(tool_name, arguments)
+    if isinstance(result, dict):
+        if result.get("status") == "sem_evidencia":
+            return "Não encontrei lições com evidências suficientes para responder essa pergunta."
+        if result.get("status") == "sem_licoes":
+            return "Ainda não há lições aprendidas registradas para este ciclo."
+        text = str(result.get("resposta") or result.get("resumo") or "").strip()
+        references = result.get("referencias")
+        if text and references:
+            text += "\n\nReferências: " + ", ".join(f"lição {item}" for item in references)
+        if text:
+            return text
+    return "Não foi possível consultar as lições aprendidas deste ciclo no momento."
 
 
 def _executar_tarefas(estado: Estado) -> str:
@@ -335,6 +368,7 @@ def _executar_predicoes(estado: Estado) -> str:
 REGISTRO_ESPECIALISTAS: dict[str, Callable[[Estado], str]] = {
     "rag": _executar_rag,
     "ciclo": _executar_ciclo,
+    "licoes": _executar_licoes,
     "tarefas": _executar_tarefas,
     "colaboradores": _executar_colaboradores,
     "formularios": _executar_formularios,
@@ -430,6 +464,9 @@ def rotear_deterministicamente(pergunta: str) -> list[str]:
         "classificar tema",
         "recorrencia",
     )
+    lesson_markers = ("licao aprendida", "licoes aprendidas", "o que aprendemos", "aprendizado do ciclo")
+    if any(marker in normalized for marker in lesson_markers):
+        return ["licoes"]
     if any(marker in normalized for marker in prediction_markers):
         if any(marker in normalized for marker in report_markers):
             return ["relatorios", "predicoes"]
@@ -607,11 +644,8 @@ def no_roteador(estado: Estado) -> dict:
         }
 
     question = _texto_mensagem(user_message).strip()
-    selected = (
-        []
-        if router_llm_always()
-        else rotear_deterministicamente(question)
-    )
+    lesson_route = rotear_deterministicamente(question)
+    selected = lesson_route if lesson_route == ["licoes"] else []
     if not selected:
         output = router.invoke({"messages": [user_message]})
         text = _texto_mensagem(output["messages"][-1]).strip()
@@ -630,6 +664,7 @@ def no_roteador(estado: Estado) -> dict:
 
 _TOOL_PADRAO_ESPECIALISTA = {
     "ciclo": "ciclo_visao_geral",
+    "licoes": "licoes_perguntar",
     "tarefas": "tarefas_relatorio_completo",
     "colaboradores": "colaboradores_participantes_ciclo",
     "formularios": "formularios_listar",
@@ -709,6 +744,21 @@ def _formatar_resultado_forcado(
         return "Não foi possível formatar a resposta deste domínio no momento."
 
 
+def _consultar_tool_padrao(name: str, estado: Estado) -> Any:
+    id_ciclo = estado.get("id_ciclo")
+    if id_ciclo is None:
+        return None
+
+    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
+    if name == "licoes":
+        user_message = _ultima_mensagem(estado, "human")
+        arguments["pergunta"] = _texto_mensagem(user_message).strip() if user_message else ""
+        return call_acta_tool(_TOOL_PADRAO_ESPECIALISTA[name], arguments)
+    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
+        arguments["limit"] = 50
+    return call_acta_tool(_TOOL_PADRAO_ESPECIALISTA[name], arguments)
+
+
 def _garantir_evidencia_tool(
     name: str,
     estado: Estado,
@@ -744,7 +794,7 @@ def _garantir_evidencia_tool(
         name != "indicadores" or has_required_indicator_evidence
     ):
         return None
-    if not enforce_specialist_tool():
+    if not _env_flag("ACTA_ENFORCE_SPECIALIST_TOOL", ACTA_ENFORCE_SPECIALIST_TOOL):
         return None
 
     if name == "rag":
@@ -755,15 +805,10 @@ def _garantir_evidencia_tool(
         result = call_acta_tool("faq_retriever", {"question": question, "limit": 3})
         return _formatar_resultado_forcado(estado, result, specialist=name)
 
-    id_ciclo = estado.get("id_ciclo")
-    if id_ciclo is None:
+    if estado.get("id_ciclo") is None:
         return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
 
-    tool_name = _TOOL_PADRAO_ESPECIALISTA[name]
-    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
-    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
-        arguments["limit"] = 50
-    result = call_acta_tool(tool_name, arguments)
+    result = _consultar_tool_padrao(name, estado)
     return _formatar_resultado_forcado(estado, result, specialist=name)
 
 
@@ -781,15 +826,10 @@ def _fallback_factual_sem_modelo(
         call_acta_tool("faq_retriever", {"question": question, "limit": 3})
         return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
 
-    id_ciclo = estado.get("id_ciclo")
-    if id_ciclo is None:
+    if estado.get("id_ciclo") is None:
         return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
 
-    tool_name = _TOOL_PADRAO_ESPECIALISTA[name]
-    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
-    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
-        arguments["limit"] = 50
-    call_acta_tool(tool_name, arguments)
+    _consultar_tool_padrao(name, estado)
     return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
 
 
@@ -904,7 +944,7 @@ def no_orquestrador(estado: Estado) -> dict:
         answer = "Não foi possível obter uma resposta dos especialistas selecionados."
     elif len(responses) == 1 and not active_skill:
         answer = responses[0]["resposta"]
-    elif active_skill or orchestrator_llm_enabled():
+    elif responses:
         user_message = _ultima_mensagem(estado, "human")
         question = _texto_mensagem(user_message).strip() if user_message else ""
         specialist_text = "\n\n".join(
@@ -940,6 +980,7 @@ def no_orquestrador(estado: Estado) -> dict:
             "colaboradores": "Colaboradores",
             "formularios": "Formulários",
             "indicadores": "Indicadores",
+            "licoes": "Lições aprendidas",
         }
         sections = [
             f"### {labels.get(item['especialista'], item['especialista'].title())}\n\n"

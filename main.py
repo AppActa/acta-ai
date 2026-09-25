@@ -4,13 +4,14 @@ import uuid
 from time import perf_counter
 
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from agents.estado import consolidar_memoria
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
+    buscar_memorias,
     configurar_consentimento,
     encerrar_sessao,
     excluir_memoria,
@@ -60,6 +61,10 @@ class CriarSkillRequest(BaseModel):
     usuario_id: int = Field(..., gt=0)
     empresa_id: int = Field(..., gt=0)
     conteudo_markdown: str = Field(..., min_length=1, max_length=5000)
+
+
+def _chat_http_exception(exc: SkillClientError) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/health")
@@ -128,10 +133,11 @@ def chat(request: ChatRequest) -> dict[str, str]:
                     message=message,
                     session_id=session_id,
                     id_ciclo=request.id_ciclo,
+                    empresa_id=request.empresa_id,
                 )
         except SkillClientError as exc:
             status = "invalid_skill"
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise _chat_http_exception(exc) from exc
         except Exception:
             status = "error"
             raise
@@ -174,11 +180,15 @@ async def chat_audio(
         usuario_id=usuario_id,
         empresa_id=empresa_id,
     ):
-        resposta = get_response(
-            message=transcricao,
-            session_id=session_id,
-            id_ciclo=id_ciclo,
-        )
+        try:
+            resposta = get_response(
+                message=transcricao,
+                session_id=session_id,
+                id_ciclo=id_ciclo,
+                empresa_id=empresa_id,
+            )
+        except SkillClientError as exc:
+            raise _chat_http_exception(exc) from exc
 
     return {
         "session_id": session_id,
@@ -210,6 +220,17 @@ def apagar_memoria(id_memoria: str, usuario_id: int, empresa_id: int) -> dict:
     ):
         excluir_memoria(id_memoria)
     return {"id_memoria": id_memoria, "excluida": True}
+
+
+@app.get("/memoria/buscar")
+def buscar_memorias_semanticamente(
+    pergunta: str = Query(..., min_length=1, max_length=1000),
+    usuario_id: int = Query(..., gt=0),
+    empresa_id: int = Query(..., gt=0),
+    limit: int = Query(default=6, ge=1, le=20),
+) -> dict:
+    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+        return {"memorias": buscar_memorias(pergunta, limit)}
 
 
 @app.get("/memoria/consentimento")

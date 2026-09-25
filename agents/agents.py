@@ -11,16 +11,18 @@ from agents.prompts.prompt_faq import _PROMPT_FAQ
 from agents.prompts.prompt_formulario import FORMULARIO_PROMPT_COMPLETO
 from agents.prompts.prompt_indicadores import INDICADORES_PROMPT_COMPLETO
 from agents.prompts.prompt_juiz import JUIZ_PROMPT_COMPLETO
+from agents.prompts.prompt_licoes import LICOES_PROMPT_COMPLETO
 from agents.prompts.prompt_orquestrador import ORQUESTRADOR_PROMPT_COMPLETO
 from agents.prompts.prompt_predicao import PREDICAO_PROMPT_COMPLETO
 from agents.prompts.prompt_relatorio import RELATORIO_PROMPT_COMPLETO
 from agents.prompts.prompt_roteador import _PROMPT_ROTEADOR
 from agents.prompts.prompt_tarefas import TAREFAS_PROMPT_COMPLETO
+from clients.mcp_acta_client import call_acta_tool
 from tools.ciclo_tools import TOOLS as CICLO_TOOLS
 from tools.colaborador_tools import TOOLS as COLABORADOR_TOOLS
-from tools.faq_tools import faq_retriever
 from tools.formulario_tools import TOOLS as FORMULARIO_TOOLS
 from tools.indicador_tools import TOOLS as INDICADORES_TOOLS
+from tools.licoes_tools import TOOLS as LICOES_MCP_TOOLS
 from tools.predicao_tools import TOOLS as PREDICAO_TOOLS
 from tools.relatorio_tools import TOOLS as RELATORIO_TOOLS
 from tools.tarefas_tools import TOOLS as TAREFAS_TOOLS
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 ESPECIALISTAS_VALIDOS = (
     "rag",
     "ciclo",
+    "licoes",
     "tarefas",
     "colaboradores",
     "formularios",
@@ -44,6 +47,7 @@ ciclo_agent = create_agent(
     tools=CICLO_TOOLS,
     system_prompt=CICLO_PROMPT_COMPLETO,
 )
+licoes_agent = create_agent(model=llm_tool_agents, tools=LICOES_MCP_TOOLS, system_prompt=LICOES_PROMPT_COMPLETO)
 colaboradores_agent = create_agent(
     model=llm_tool_agents,
     tools=COLABORADOR_TOOLS,
@@ -91,7 +95,21 @@ def responder_faq(pergunta: str) -> str:
         return "Não recebi uma pergunta válida para responder."
 
     try:
-        contexto = faq_retriever.invoke(pergunta)
+        result = call_acta_tool("faq_retriever", {"question": pergunta, "limit": 3})
+        if not isinstance(result, dict) or result.get("status") != "ok":
+            return "Não consegui consultar a base de conhecimento do ACTA no momento."
+        contexto = "\n\n---\n\n".join(
+            "\n".join(
+                part
+                for part in (
+                    f"Fonte: {item.get('source', '')}",
+                    f"Título: {item.get('title', '')}",
+                    item.get("content", ""),
+                )
+                if part
+            )
+            for item in result.get("resultados", [])
+        )
         if not contexto or not contexto.strip():
             return "Não encontrei informação suficiente na base do ACTA para responder essa pergunta."
         resposta = llm_fast.invoke(
@@ -113,6 +131,7 @@ __all__ = [
     "formularios_agent",
     "indicadores_agent",
     "juiz",
+    "licoes_agent",
     "orquestrador",
     "predicoes_agent",
     "responder_faq",

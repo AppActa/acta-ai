@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import sys
+import os
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from functools import lru_cache
+from threading import Lock
 from typing import Any
 
 from opentelemetry import metrics, trace
@@ -18,24 +20,12 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from config import (
-    acta_environment,
-    has_any_otel_endpoint,
-    observability_enabled,
-    observability_enabled_in_tests,
-    otel_service_name,
-    set_default_env,
-)
-
 _configured = False
+_tool_usage: Counter[str] = Counter()
+_tool_usage_lock = Lock()
 
 
-def _is_enabled() -> bool:
-    if "pytest" in sys.modules and not observability_enabled_in_tests():
-        return False
-    if not observability_enabled():
-        return False
-    return has_any_otel_endpoint()
+
 
 
 def configure_observability(default_service_name: str) -> bool:
@@ -44,17 +34,15 @@ def configure_observability(default_service_name: str) -> bool:
     global _configured
     if _configured:
         return True
-    if not _is_enabled():
-        return False
 
-    set_default_env("OTEL_SERVICE_NAME", default_service_name)
-    set_default_env("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+
+    os.environ.setdefault("OTEL_SERVICE_NAME", default_service_name)
+    os.environ.setdefault("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
 
     resource = Resource.create(
         {
-            "service.name": otel_service_name(default_service_name),
+            "service.name": os.getenv("OTEL_SERVICE_NAME", default_service_name),
             "service.namespace": "acta",
-            "deployment.environment": acta_environment(),
         }
     )
 
@@ -149,6 +137,22 @@ def record_pipeline_stage(stage: str, duration_ms: float) -> None:
 def record_mcp_tool_call(tool_name: str, duration_ms: float, *, status: str, cached: bool) -> None:
     if not _configured:
         return
+    with _tool_usage_lock:
+        _tool_usage[tool_name] += 1
     attributes = {"tool": tool_name, "status": status, "cached": cached}
     _tool_calls().add(1, attributes)
     _tool_latency().record(duration_ms, attributes)
+
+
+def get_mcp_tool_usage() -> dict[str, int]:
+    """Retorna a quantidade de chamadas MCP observadas por tool."""
+
+    with _tool_usage_lock:
+        return dict(_tool_usage)
+
+
+def reset_mcp_tool_usage() -> None:
+    """Limpa o acumulado local de tools observadas."""
+
+    with _tool_usage_lock:
+        _tool_usage.clear()
