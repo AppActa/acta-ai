@@ -139,8 +139,6 @@ def test_specialists_are_functions_not_graph_nodes() -> None:
 
 def test_router_can_call_multiple_specialists(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    monkeypatch.setenv("ACTA_ROUTER_LLM_ALWAYS", "true")
-    monkeypatch.setenv("ACTA_ORCHESTRATOR_LLM", "true")
     cycle_agent = FakeAgent("Situação do ciclo")
     tasks_agent = FakeAgent("Tarefas atrasadas")
     orchestrator = FakeAgent("Resposta consolidada")
@@ -181,10 +179,9 @@ def test_router_can_call_multiple_specialists(monkeypatch) -> None:
     assert "Tarefas atrasadas" in orchestrator_prompt
 
 
-def test_default_orchestrator_formats_multiple_answers_without_llm(monkeypatch) -> None:
+def test_orchestrator_always_uses_llm_for_multiple_answers(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    orchestrator = FakeAgent("Não deveria ser chamada")
-    monkeypatch.delenv("ACTA_ORCHESTRATOR_LLM", raising=False)
+    orchestrator = FakeAgent("Resposta consolidada pelo orquestrador")
     monkeypatch.setattr(
         state_module,
         "guardrail_entrada",
@@ -192,6 +189,7 @@ def test_default_orchestrator_formats_multiple_answers_without_llm(monkeypatch) 
     )
     monkeypatch.setattr(state_module, "ciclo_agent", FakeAgent("Situação do ciclo"))
     monkeypatch.setattr(state_module, "tarefas_agent", FakeAgent("Tarefas atrasadas"))
+    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo,tarefas"))
     monkeypatch.setattr(state_module, "orquestrador", orchestrator)
     monkeypatch.setattr(
         state_module,
@@ -209,9 +207,8 @@ def test_default_orchestrator_formats_multiple_answers_without_llm(monkeypatch) 
         id_ciclo=4,
     )
 
-    assert "### Ciclo\n\nSituação do ciclo" in response
-    assert "### Tarefas\n\nTarefas atrasadas" in response
-    assert orchestrator.calls == []
+    assert response == "Resposta consolidada pelo orquestrador"
+    assert len(orchestrator.calls) == 1
 
 
 def test_langchain_tool_forwards_to_mcp_client(monkeypatch) -> None:
@@ -281,7 +278,6 @@ def test_prediction_tool_forwards_to_mcp_client(monkeypatch) -> None:
 
 def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    monkeypatch.setenv("ACTA_ROUTER_LLM_ALWAYS", "true")
     specialist = FakeAgent("Fatos originais do ciclo")
     orchestrator = FakeAgent("Resposta formatada pela skill")
     router = FakeAgent("ROUTE=ciclo")
@@ -387,16 +383,22 @@ def test_assisted_creation_stops_on_prompt_injection(monkeypatch) -> None:
     assert response == "Solicitação bloqueada."
 
 
-def test_lesson_request_is_routed_to_the_cycle_agent(monkeypatch) -> None:
+def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    cycle_agent = FakeAgent("Resumo das lições.")
+    tool_calls = []
+    monkeypatch.setattr(
+        state_module,
+        "call_acta_tool",
+        lambda name, arguments: tool_calls.append((name, arguments))
+        or {"status": "ok", "resposta": "Resumo das lições.", "referencias": [2]},
+    )
     monkeypatch.setattr(
         state_module,
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
-    monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
+    router = FakeAgent("ROUTE=ciclo")
+    monkeypatch.setattr(state_module, "router", router)
     monkeypatch.setattr(
         state_module,
         "guardrail_saida",
@@ -410,6 +412,7 @@ def test_lesson_request_is_routed_to_the_cycle_agent(monkeypatch) -> None:
         empresa_id=4,
     )
 
-    assert response == "Resumo das lições."
-    assert len(cycle_agent.calls) == 1
+    assert response == "Resumo das lições.\n\nReferências: lição 2"
+    assert tool_calls == [("licoes_resumir", {"id_ciclo": 7})]
+    assert router.calls == []
     assert not hasattr(pipeline_module, "enviar_pedido_licao")
