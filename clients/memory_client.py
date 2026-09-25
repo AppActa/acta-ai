@@ -1,22 +1,16 @@
-"""Fachada do acta-ai para as operações de memória fornecidas pelo MCP."""
+"""Fachada das operações de memória pertencentes ao ACTA AI."""
 
 from datetime import datetime
 from typing import Any
 
-from clients.mcp_acta_client import MCPActaError, call_acta_tool
-
-
-def _dict_result(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    result = call_acta_tool(tool_name, arguments)
-    if not isinstance(result, dict):
-        raise MCPActaError(f"A tool '{tool_name}' não retornou um objeto estruturado.")
-    if result.get("status") != "ok":
-        raise MCPActaError(str(result.get("message", f"Falha em {tool_name}.")))
-    return result
+from clients.mcp_acta_client import current_mcp_request_context
+from utils.runtime import get_memory_service
 
 
 def garantir_sessao(session_id: str, metadata: dict[str, Any] | None = None) -> None:
-    _dict_result("memoria_garantir_sessao", {"session_id": session_id, "metadata": metadata})
+    get_memory_service().garantir_sessao(
+        current_mcp_request_context(), session_id=session_id, metadata=metadata
+    )
 
 
 def salvar_mensagem(
@@ -28,20 +22,20 @@ def salvar_mensagem(
         "ai": "assistente",
         "assistant": "assistente",
     }
-    _dict_result(
-        "memoria_salvar_mensagem",
-        {
-            "session_id": session_id,
-            "role": role_map.get(role.lower(), role.lower()),
-            "content": content,
-            "agent": agent,
-            "metadata": metadata,
-        },
+    get_memory_service().salvar_mensagem(
+        current_mcp_request_context(),
+        session_id=session_id,
+        role=role_map.get(role.lower(), role.lower()),
+        content=content,
+        agent=agent,
+        metadata=metadata or {},
     )
 
 
 def obter_contexto_detalhado(session_id: str, pergunta: str = "") -> dict[str, Any]:
-    return _dict_result("memoria_obter_contexto", {"session_id": session_id, "pergunta": pergunta})
+    return get_memory_service().obter_contexto(
+        current_mcp_request_context(), session_id=session_id, pergunta=pergunta
+    )
 
 
 def obter_contexto(session_id: str, pergunta: str) -> str:
@@ -50,22 +44,30 @@ def obter_contexto(session_id: str, pergunta: str) -> str:
 
 
 def obter_material_resumo(session_id: str, *, forcar: bool = False) -> dict[str, Any]:
-    return _dict_result("memoria_material_resumo", {"session_id": session_id, "forcar": forcar})
+    return get_memory_service().material_resumo(
+        current_mcp_request_context(), session_id=session_id, forcar=forcar
+    )
 
 
 def encerrar_sessao(session_id: str) -> bool:
-    return bool(_dict_result("memoria_encerrar_sessao", {"session_id": session_id}).get("encerrada"))
+    result = get_memory_service().encerrar_sessao(
+        current_mcp_request_context(), session_id=session_id
+    )
+    return bool(result.get("encerrada"))
 
 
 def listar_chats(limit: int = 50) -> list[dict[str, Any]]:
-    return list(_dict_result("memoria_listar_chats", {"limit": limit}).get("chats", []))
+    result = get_memory_service().listar_chats(current_mcp_request_context(), limit=limit)
+    return list(result.get("chats", []))
 
 
 def atualizar_resumo(session_id: str, resumo: str, resumido_ate: str | datetime) -> None:
-    marker = resumido_ate.isoformat() if isinstance(resumido_ate, datetime) else resumido_ate
-    _dict_result(
-        "memoria_atualizar_resumo",
-        {"session_id": session_id, "resumo": resumo, "resumido_ate": marker},
+    marker = datetime.fromisoformat(resumido_ate) if isinstance(resumido_ate, str) else resumido_ate
+    get_memory_service().atualizar_resumo(
+        current_mcp_request_context(),
+        session_id=session_id,
+        resumo=resumo,
+        resumido_ate=marker,
     )
 
 
@@ -77,36 +79,40 @@ def registrar_memoria(
     origem: str = "explicita",
     confianca: float = 1.0,
 ) -> bool:
-    result = _dict_result(
-        "memoria_registrar",
-        {
-            "tipo": tipo,
-            "conteudo": conteudo,
-            "origem": origem,
-            "confianca": confianca,
-            "session_id_origem": session_id,
-        },
+    result = get_memory_service().registrar(
+        current_mcp_request_context(),
+        tipo=tipo,
+        conteudo=conteudo,
+        origem=origem,
+        confianca=confianca,
+        session_id_origem=session_id,
     )
     return bool(result.get("salva"))
 
 
+def buscar_memorias(pergunta: str, limit: int = 6) -> list[dict[str, Any]]:
+    result = get_memory_service().buscar(
+        current_mcp_request_context(), pergunta=pergunta, limit=limit
+    )
+    return list(result.get("memorias", []))
+
+
 def listar_memorias(tipo: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-    result = _dict_result("memoria_listar", {"tipo": tipo, "limit": limit})
+    result = get_memory_service().listar(current_mcp_request_context(), tipo=tipo, limit=limit)
     return list(result.get("memorias", []))
 
 
 def excluir_memoria(id_memoria: str) -> None:
-    _dict_result("memoria_excluir", {"id_memoria": id_memoria})
+    get_memory_service().excluir(current_mcp_request_context(), id_memoria=id_memoria)
 
 
 def obter_consentimento() -> dict[str, Any]:
-    result = _dict_result("memoria_obter_consentimento", {})
+    result = get_memory_service().obter_consentimento(current_mcp_request_context())
     return dict(result.get("consentimento", {}))
 
 
 def configurar_consentimento(modo: str, retencao_dias: int | None = None) -> dict[str, Any]:
-    result = _dict_result(
-        "memoria_configurar_consentimento",
-        {"modo": modo, "retencao_dias": retencao_dias},
+    result = get_memory_service().configurar_consentimento(
+        current_mcp_request_context(), modo=modo, retencao_dias=retencao_dias
     )
     return dict(result.get("consentimento", {}))

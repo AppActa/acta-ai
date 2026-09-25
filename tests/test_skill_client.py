@@ -6,34 +6,37 @@ import clients.skill_client as skill_client
 def test_resolves_slash_command_and_removes_it_before_pipeline(monkeypatch) -> None:
     calls = []
 
-    def fake_call(name, arguments):
-        calls.append((name, arguments))
-        return {
-            "status": "ok",
-            "skill": {
-                "nome": "Resumo Executivo",
-                "slug": "resumo-executivo",
-                "objetivo": "Resumir.",
-                "regras": "Usar tópicos.",
-            },
-        }
+    class SkillsService:
+        def obter(self, context, *, nome):
+            calls.append((context.usuario_id, context.empresa_id, nome))
+            return {
+                "status": "ok",
+                "skill": {
+                    "nome": "Resumo Executivo",
+                    "slug": "resumo-executivo",
+                    "objetivo": "Resumir.",
+                    "regras": "Usar tópicos.",
+                },
+            }
 
-    monkeypatch.setattr(skill_client, "call_acta_tool", fake_call)
+    monkeypatch.setattr(skill_client, "get_skills_service", lambda: SkillsService())
+    from clients.mcp_acta_client import mcp_request_context
 
-    question, skill = skill_client.resolver_comando_skill(
-        "/resumo-executivo Mostre a situação do ciclo."
-    )
+    with mcp_request_context(usuario_id=7, empresa_id=3):
+        question, skill = skill_client.resolver_comando_skill(
+            "/resumo-executivo Mostre a situação do ciclo."
+        )
 
     assert question == "Mostre a situação do ciclo."
     assert skill["slug"] == "resumo-executivo"
-    assert calls == [("skills_obter", {"nome": "resumo-executivo"})]
+    assert calls == [(7, 3, "resumo-executivo")]
 
 
 def test_normal_message_does_not_access_skill_storage(monkeypatch) -> None:
     monkeypatch.setattr(
         skill_client,
-        "call_acta_tool",
-        lambda *_: pytest.fail("MCP não deveria ser chamado"),
+        "get_skills_service",
+        lambda: pytest.fail("armazenamento não deveria ser acessado"),
     )
 
     assert skill_client.resolver_comando_skill("Como está o ciclo?") == (

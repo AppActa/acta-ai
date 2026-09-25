@@ -2,10 +2,9 @@
 
 ## Responsabilidades
 
-O ACTA AI é a camada conversacional. Ele não consulta bancos de dados diretamente;
-chama tools publicadas pelo MCP e usa os resultados estruturados para construir a
-resposta. O MCP é responsável por autorização, isolamento de tenant, acesso aos
-dados e persistência de memória.
+O ACTA AI é a camada conversacional e mantém suas capacidades internas: memória e
+skills pessoais. Para dados, FAQ e operações dos domínios ACTA, chama tools
+publicadas pelo MCP, que aplica autorização e isolamento de tenant.
 
 | Componente | Responsabilidade |
 | --- | --- |
@@ -13,8 +12,10 @@ dados e persistência de memória.
 | `pipeline.py` | Grafo LangGraph e histórico em memória de processo por sessão. |
 | `agents/estado.py` | Nós do fluxo, roteamento, especialistas, memória e avaliação. |
 | `agents/guardrail.py` | Anonimização de PII e bloqueios de segurança. |
-| `clients/mcp_acta_client.py` | Cliente Streamable HTTP, cabeçalhos de identidade, tentativas e cache por execução. |
-| `clients/memory_client.py` | Fachada das tools de memória do MCP. |
+| `clients/mcp_acta_client.py` | Cliente Streamable HTTP para operações de domínio. |
+| `clients/memory_client.py` | Operações de memória no MongoDB/Qdrant do ACTA AI. |
+| `clients/skill_client.py` | Skills pessoais no MongoDB do ACTA AI. |
+| `utils/` | Repositórios e serviços internos do chatbot. |
 
 ## Fluxo de uma mensagem
 
@@ -23,7 +24,7 @@ flowchart TD
     A[Cliente] --> B[POST /chat]
     B --> C[Contexto usuario_id + empresa_id]
     C --> D[Guardrail de entrada e anonimização]
-    D --> E[Carrega contexto de memória pelo MCP]
+    D --> E[Carrega contexto de memória no ACTA AI]
     E --> F[Roteador]
     F --> G[Especialistas e tools MCP]
     G --> H[Orquestrador e juiz]
@@ -32,16 +33,15 @@ flowchart TD
 ```
 
 O roteador seleciona os especialistas de acordo com a intenção. Especialistas usam
-as tools do MCP para ciclos, tarefas, colaboradores, formulários, predições, RAG,
-lições aprendidas e outros domínios. A resposta final passa por revisão antes de
-voltar ao cliente.
+tools do MCP para dados de ciclos, tarefas, colaboradores, formulários, predições e
+lições aprendidas e FAQ. O FAQ/RAG usa a base documental publicada pelo MCP. A resposta final passa
+por revisão antes de voltar ao cliente.
 
 ## Identidade e isolamento
 
-Cada rota que acessa o MCP instala um `mcp_request_context` com `usuario_id`,
-`empresa_id` e um `trace_id`. O cliente MCP envia esses valores em cabeçalhos; eles
-não são argumentos disponíveis ao modelo. O servidor MCP decide as permissões e
-aplica os filtros de tenant.
+Cada rota autenticada instala um `mcp_request_context` com `usuario_id`, `empresa_id`
+e um `trace_id`. O contexto filtra memória/skills no ACTA AI e vai em cabeçalhos nas
+chamadas MCP; a identidade não fica disponível como argumento do modelo.
 
 O cache de tools dura somente uma execução da pipeline. O estado do LangGraph usa
 uma chave que inclui empresa, usuário e `session_id`, evitando misturar históricos
@@ -51,7 +51,8 @@ locais de sessões de tenants diferentes.
 
 O `MemorySaver` do LangGraph conserva mensagens enquanto o processo está vivo.
 Ele melhora a continuidade da rodada, mas não é a fonte persistente. A memória
-durável está no MCP: MongoDB é a fonte oficial e Qdrant é o índice semântico.
+durável fica no ACTA AI: MongoDB é a fonte oficial e Qdrant, quando configurado, é o
+índice semântico.
 Consulte [Memória](memoria.md) para o ciclo completo.
 
 ## Observabilidade

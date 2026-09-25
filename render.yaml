@@ -22,16 +22,22 @@ services:
         value: "1024"
       - key: ACTA_SPECIALIST_FEW_SHOTS
         value: "false"
-      - key: ACTA_ROUTER_LLM_ALWAYS
-        value: "false"
-      - key: ACTA_ORCHESTRATOR_LLM
-        value: "false"
-      - key: ACTA_GUARDRAIL_LLM_OUTPUT
-        value: "false"
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB_NAME
         value: acta_ai
+      - key: ACTA_SYSTEM_FEATURES_DB_NAME
+        value: acta
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: QDRANT_CLUSTER_ENDPOINT
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_MEMORY_MESSAGES_COLLECTION_NAME
+        value: memoria_mensagens
+      - key: QDRANT_MEMORY_COLLECTION_NAME
+        value: memoria_usuario
       - key: MONGODB_SESSIONS_COLLECTION
         value: chat_sessoes
       - key: ACTA_STORE_RAW_PII

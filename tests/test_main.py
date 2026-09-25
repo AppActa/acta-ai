@@ -4,7 +4,6 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 import main
-from clients.a2a_client import A2ALessonClientError
 from clients.skill_client import SkillClientError
 
 client = TestClient(main.app)
@@ -97,47 +96,6 @@ def test_chat_delegates_cycle_and_authenticated_context(monkeypatch) -> None:
     ]
 
 
-def test_chat_returns_service_unavailable_when_a2a_is_offline(monkeypatch) -> None:
-    monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
-    monkeypatch.setattr(
-        main,
-        "get_response",
-        lambda **_: (_ for _ in ()).throw(A2ALessonClientError("A2A indisponível.")),
-    )
-
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Resuma as lições aprendidas.",
-            "session_id": "sessao-a2a",
-            "usuario_id": 3,
-            "empresa_id": 4,
-        },
-    )
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "A2A indisponível."
-
-
-def test_audio_chat_returns_service_unavailable_when_a2a_is_offline(monkeypatch) -> None:
-    monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
-    monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Resuma as lições.")
-    monkeypatch.setattr(
-        main,
-        "get_response",
-        lambda **_: (_ for _ in ()).throw(A2ALessonClientError("A2A indisponível.")),
-    )
-
-    response = client.post(
-        "/chat/audio",
-        data={"session_id": "sessao-audio", "usuario_id": "3", "empresa_id": "4"},
-        files={"audio": ("audio.webm", b"audio", "audio/webm")},
-    )
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "A2A indisponível."
-
-
 def test_audio_chat_returns_bad_request_when_skill_is_invalid(monkeypatch) -> None:
     monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
     monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Use a skill inválida.")
@@ -176,6 +134,31 @@ def test_memory_consent_and_deletion_endpoints(monkeypatch) -> None:
     deleted = client.delete("/memoria/abc?usuario_id=3&empresa_id=4")
     assert deleted.status_code == 200
     assert deleted.json() == {"id_memoria": "abc", "excluida": True}
+
+
+def test_memory_search_endpoint_uses_authenticated_identity(monkeypatch) -> None:
+    contexts = []
+    calls = []
+
+    def fake_context(**kwargs):
+        contexts.append(kwargs)
+        return nullcontext()
+
+    monkeypatch.setattr(main, "mcp_request_context", fake_context)
+    monkeypatch.setattr(
+        main,
+        "buscar_memorias",
+        lambda pergunta, limit: calls.append((pergunta, limit)) or [{"conteudo": "Evidência"}],
+    )
+
+    response = client.get(
+        "/memoria/buscar?pergunta=prefer%C3%AAncia&usuario_id=3&empresa_id=4&limit=5"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"memorias": [{"conteudo": "Evidência"}]}
+    assert calls == [("preferência", 5)]
+    assert contexts == [{"usuario_id": 3, "empresa_id": 4}]
 
 
 def test_skill_creation_list_and_deletion_endpoints(monkeypatch) -> None:

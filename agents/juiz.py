@@ -2,13 +2,14 @@
 
 import json
 import logging
+import os
 import re
 from contextlib import suppress
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from agents.agents import juiz
-from config import judge_llm_enabled
+from config import ACTA_JUDGE_LLM
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,13 @@ def avaliar_resposta(
         has_evidence=has_evidence,
     )
 
-    if not judge_llm_enabled():
+    if os.getenv("ACTA_JUDGE_LLM", "true" if ACTA_JUDGE_LLM else "false").lower() not in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }:
         if deterministic:
             return {
                 "status": "SUBSTITUIDO",

@@ -70,27 +70,6 @@ def test_summary_and_inferred_memories_are_consolidated_in_one_llm_call(monkeypa
     )
 
 
-def test_memory_mutations_are_not_cached(monkeypatch) -> None:
-    calls = []
-    monkeypatch.setattr(
-        mcp_acta_client,
-        "_run_async_in_sync_context",
-        lambda name, arguments: calls.append((name, arguments)) or {"status": "ok"},
-    )
-
-    with mcp_acta_client.mcp_tool_cache_context():
-        mcp_acta_client.call_acta_tool(
-            "memoria_salvar_mensagem",
-            {"session_id": "s", "role": "usuario", "content": "x"},
-        )
-        mcp_acta_client.call_acta_tool(
-            "memoria_salvar_mensagem",
-            {"session_id": "s", "role": "usuario", "content": "x"},
-        )
-
-    assert len(calls) == 2
-
-
 def test_local_checkpointer_scope_isolated_by_authenticated_owner() -> None:
     with mcp_acta_client.mcp_request_context(usuario_id=1, empresa_id=2):
         first = mcp_acta_client.mcp_identity_scope()

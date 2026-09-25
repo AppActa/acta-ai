@@ -19,6 +19,9 @@
 | `ACTA_MCP_TIMEOUT_SECONDS` | Tempo máximo de uma chamada MCP. |
 | `ACTA_MCP_MAX_ATTEMPTS` | Número de tentativas para falhas transitórias. |
 | `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID` | Identidade padrão apenas para uso fora das rotas HTTP. |
+| `MONGODB_URI` e `ACTA_SYSTEM_FEATURES_DB_NAME` | MongoDB das conversas, memórias e skills pessoais. |
+| `GEMINI_API_KEY` | Embeddings de memória e geração das lições aprendidas. |
+| `QDRANT_CLUSTER_ENDPOINT` e `QDRANT_API_KEY` | Índice semântico opcional para memória. |
 
 Os parâmetros de modelos, guardrails, especialistas e observabilidade estão
 documentados no `.env.example`. Nunca versione o `.env` real.

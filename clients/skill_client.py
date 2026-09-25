@@ -4,7 +4,8 @@ import re
 import unicodedata
 from typing import Any
 
-from clients.mcp_acta_client import call_acta_tool
+from clients.mcp_acta_client import current_mcp_request_context
+from utils.runtime import get_skills_service
 
 _SKILL_COMMAND = re.compile(
     r"^/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+(?P<message>[\s\S]+))?$"
@@ -43,22 +44,33 @@ def _expect_ok(result: dict | str) -> dict[str, Any]:
 
 
 def criar_skill(conteudo_markdown: str) -> dict[str, Any]:
-    result = call_acta_tool("skills_criar", {"conteudo_markdown": conteudo_markdown})
+    try:
+        result = get_skills_service().criar(
+            current_mcp_request_context(), conteudo_markdown=conteudo_markdown
+        )
+    except (LookupError, ValueError) as exc:
+        raise SkillClientError(str(exc)) from exc
     return _expect_ok(result)["skill"]
 
 
 def listar_skills(limit: int = 50) -> list[dict[str, Any]]:
-    result = call_acta_tool("skills_listar", {"limit": limit})
+    result = get_skills_service().listar(current_mcp_request_context(), limit=limit)
     return _expect_ok(result)["skills"]
 
 
 def obter_skill(nome: str) -> dict[str, Any]:
-    result = call_acta_tool("skills_obter", {"nome": nome})
+    try:
+        result = get_skills_service().obter(current_mcp_request_context(), nome=nome)
+    except (LookupError, ValueError) as exc:
+        raise SkillClientError(str(exc)) from exc
     return _expect_ok(result)["skill"]
 
 
 def excluir_skill(nome: str) -> dict[str, Any]:
-    result = call_acta_tool("skills_excluir", {"nome": nome})
+    try:
+        result = get_skills_service().excluir(current_mcp_request_context(), nome=nome)
+    except (LookupError, ValueError) as exc:
+        raise SkillClientError(str(exc)) from exc
     return _expect_ok(result)
 
 
