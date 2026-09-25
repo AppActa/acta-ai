@@ -75,6 +75,7 @@ A resposta inclui a transcrição e a resposta do chat.
 - `DELETE /memoria/{id_memoria}?usuario_id=1&empresa_id=1`
 - `GET /memoria/consentimento?usuario_id=1&empresa_id=1`
 - `PUT /memoria/consentimento`
+- `GET /memoria/buscar?pergunta=preferência&usuario_id=1&empresa_id=1&limit=6`
 
 O corpo do `PUT` aceita `modo`: `desativado`, `somente_explicitas` ou `automatica`,
 e `retencao_dias` opcional. Veja a política em [Memória](memoria.md).
