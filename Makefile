@@ -10,4 +10,4 @@ validate:
 	$(UV) lock --check
 	$(UV) run ruff check .
 	$(UV) run python -m pytest -q $(COVERAGE_ARGS) --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
-	@echo VALIDATE APROVADO: Ruff sem findings; testes aprovados; cobertura >= $(COVERAGE_MIN)%.
+	@echo "VALIDATE APROVADO: Ruff sem findings; testes aprovados; cobertura >= $(COVERAGE_MIN)%"
