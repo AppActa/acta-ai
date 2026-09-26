@@ -1,0 +1,93 @@
+name: test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    env:
+      # O projeto expõe módulos no diretório raiz (por exemplo, main e agents).
+      # O uv não instala este repositório como pacote porque package = false.
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --extra dev
+      - run: uv run ruff check .
+      - run: uv run python -m pytest --cov=. --cov-report=term-missing --cov-report=xml
+
+      - name: publicar cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-python
+          path: coverage.xml
+          if-no-files-found: error
+
+      - name: smoke
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          ACTA_MCP_URL: "https://acta-mcp.onrender.com/mcp"
+          ACTA_RUN_MCP_INTEGRATION: "1"
+          ACTA_MCP_API_KEY: ${{ secrets.ACTA_MCP_API_KEY }}
+        shell: bash
+        run: |
+          test -n "$ACTA_MCP_URL"
+          test -n "$ACTA_MCP_API_KEY"
+          uv run pytest tests/test_mcp_client_integration.py -v
+
+  dependencias:
+    name: auditoria de dependências
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: exportar dependências resolvidas
+        run: uv export --locked --no-dev --format requirements.txt --output-file requirements-ci.txt
+
+      - name: auditar dependências
+        run: uvx --from pip-audit pip-audit -r requirements-ci.txt
+
+  startup:
+    name: startup da aplicação
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --extra dev
+
+      - name: validar startup e healthcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run uvicorn main:app --host 127.0.0.1 --port 8200 > startup.log 2>&1 &
+          process_id=$!
+          trap 'kill "$process_id" 2>/dev/null || true; cat startup.log' EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8200/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          exit 1
