@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from utils.memory.service import MemoryService
 
@@ -19,6 +21,7 @@ class FakeMemoryRepository:
         ]
         self.chats = []
         self.last_list_limit = None
+        self.semantic_queries = []
 
     def ensure_session(self, context, session_id, metadata=None):
         return {"session_id": session_id, "resumo": self.summary}
@@ -65,6 +68,7 @@ class FakeMemoryRepository:
         return [item for item in self.memories if tipo is None or item["tipo"] == tipo][:limit]
 
     def semantic_search(self, context, query, limit):
+        self.semantic_queries.append((query, limit))
         return self.memories[:limit]
 
     def delete_memory(self, context, memory_id):
@@ -92,6 +96,7 @@ def test_context_combines_summary_preferences_and_recent_messages() -> None:
     assert "Resumo acumulado" in result["contexto"]
     assert "Respostas curtas" in result["contexto"]
     assert "Últimas mensagens" in result["contexto"]
+    assert repository.semantic_queries == [("Como responder?", 6)]
 
 
 def test_inferred_memory_requires_automatic_consent() -> None:
@@ -116,17 +121,28 @@ def test_inferred_memory_requires_automatic_consent() -> None:
     assert stored["salva"] is True
 
 
-def test_memory_search_uses_mongo_when_qdrant_is_not_configured() -> None:
+def test_memory_search_requires_qdrant_when_it_is_not_configured() -> None:
     repository = FakeMemoryRepository()
     repository.qdrant = None
-    repository.memories.append(
-        {"_id": "memory-1", "tipo": "objetivo", "conteudo": "Reduzir atrasos"}
+    service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
+
+    with pytest.raises(RuntimeError, match="Qdrant é obrigatório"):
+        service.buscar(CONTEXT, pergunta="atrasos")
+
+
+def test_memory_search_does_not_fall_back_to_mongo_when_qdrant_fails() -> None:
+    repository = FakeMemoryRepository()
+    repository.qdrant = object()
+    repository.semantic_search = lambda *_args: (_ for _ in ()).throw(
+        ConnectionError("Qdrant indisponível")
+    )
+    repository.list_memories = lambda *_args, **_kwargs: pytest.fail(
+        "Busca semântica não pode ser substituída por listagem no Mongo"
     )
     service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
 
-    result = service.buscar(CONTEXT, pergunta="atrasos")
-
-    assert result["memorias"][0]["_id"] == "memory-1"
+    with pytest.raises(ConnectionError, match="Qdrant indisponível"):
+        service.buscar(CONTEXT, pergunta="atrasos")
 
 
 def test_summary_is_incremental_and_threshold_based() -> None:

@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime
 from typing import Any
 
@@ -6,8 +5,6 @@ from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from utils.errors import NotFoundError
 from utils.memory.repository import MemoryRepository
 from utils.memory.schemas import ConsentInput, MemoryInput, MessageInput, SessionInput
-
-logger = logging.getLogger(__name__)
 
 
 def _format_messages(messages: list[dict[str, Any]]) -> str:
@@ -39,12 +36,8 @@ class MemoryService:
         self, context: RequestContext, question: str, limit: int
     ) -> list[dict[str, Any]]:
         if getattr(self.repository, "qdrant", object()) is None:
-            return self.repository.list_memories(context, tipo=None, limit=limit)
-        try:
-            return self.repository.semantic_search(context, question, limit)
-        except Exception:  # noqa: BLE001 - Mongo mantém a memória disponível sem Qdrant
-            logger.exception("Busca semântica indisponível; usando memórias mais recentes.")
-            return self.repository.list_memories(context, tipo=None, limit=limit)
+            raise RuntimeError("Qdrant é obrigatório para buscar memórias semanticamente.")
+        return self.repository.semantic_search(context, question, limit)
 
     def garantir_sessao(
         self, context: RequestContext, *, session_id: str, metadata: dict[str, Any] | None = None
