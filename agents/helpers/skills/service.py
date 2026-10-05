@@ -1,9 +1,9 @@
 from typing import Any
 
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.errors import NotFoundError
-from utils.skills.compiler import normalize_skill_command, parse_skill_markdown
-from utils.skills.repository import SkillsRepository
+from agents.helpers.errors import NotFoundError
+from agents.helpers.skills.compiler import normalize_skill_command, parse_skill_markdown
+from agents.helpers.skills.repository import SkillsRepository
 
 
 class SkillsService:

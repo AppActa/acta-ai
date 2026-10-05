@@ -63,7 +63,8 @@ class Estado(MessagesState):
     evidencias_tools: list[dict[str, Any]]
     mapa_pii: dict[str, str]
     session_id: str
-    id_ciclo: int | None
+    id_ciclo: list[int]
+    ciclo_ativo: int | None
     contexto_memoria: str
     resposta_final: str
     avaliacao_juiz: dict[str, Any]
@@ -107,6 +108,44 @@ def _ultima_mensagem(estado: Estado, message_type: str) -> BaseMessage | None:
         if message.type == message_type and _texto_mensagem(message).strip():
             return message
     return None
+
+
+def _pergunta_abrangente(question: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", question.lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    words = set(re.findall(r"\w+", normalized))
+    comparative_terms = {
+        "compara",
+        "compare",
+        "comparar",
+        "comparacao",
+        "comparacoes",
+        "comparativa",
+        "comparativo",
+        "comparativas",
+        "comparativos",
+    }
+    return bool(words & comparative_terms) or any(
+        phrase in normalized
+        for phrase in ("todos os ciclos", "cada ciclo", "entre os ciclos")
+    )
+
+
+def _ids_ciclo_estado(estado: Estado) -> list[int]:
+    cycle_ids = estado.get("id_ciclo")
+    if cycle_ids is None:
+        return []
+    return [cycle_ids] if isinstance(cycle_ids, int) else cycle_ids
+
+
+def _ciclos_para_consulta(estado: Estado, question: str) -> list[int]:
+    cycle_ids = _ids_ciclo_estado(estado)
+    if _pergunta_abrangente(question):
+        return cycle_ids
+    active_cycle = estado.get("ciclo_ativo")
+    if active_cycle is not None:
+        return [active_cycle]
+    return cycle_ids if len(cycle_ids) == 1 else []
 
 
 def _salvar_mensagem(
@@ -240,8 +279,14 @@ def _mensagens_para_especialista(
         "e só então responda com o resultado. Não exponha nomes de ferramentas nem detalhes "
         "internos. Se faltar um identificador obrigatório, peça esse identificador sem inventá-lo."
     ]
-    if estado.get("id_ciclo") is not None:
-        context_parts.append(f"ID do ciclo autorizado nesta requisição: {estado['id_ciclo']}.")
+    cycle_ids = _ids_ciclo_estado(estado)
+    if cycle_ids:
+        context_parts.append(
+            "IDs de ciclos autorizados nesta requisição, na ordem de consulta: "
+            f"{cycle_ids}. Em perguntas comparativas, consulte cada ciclo em uma chamada "
+            "separada; nunca use IDs "
+            "fora desta lista. O primeiro ciclo é a preferência ativa."
+        )
     if estado.get("contexto_memoria"):
         context_parts.append(estado["contexto_memoria"])
     if instruction and len(estado.get("especialistas", [])) > 1:
@@ -280,9 +325,10 @@ def _executar_ciclo(estado: Estado) -> str:
 
 
 def _executar_licoes(estado: Estado) -> str:
-    id_ciclo = estado.get("id_ciclo")
-    if id_ciclo is None:
+    cycle_ids = _ids_ciclo_estado(estado)
+    if not cycle_ids:
         return "Informe o ciclo para consultar lições aprendidas."
+    id_ciclo = cycle_ids[0]
     user_message = _ultima_mensagem(estado, "human")
     question = _texto_mensagem(user_message).strip() if user_message else ""
     normalized = unicodedata.normalize("NFKD", question.lower())
@@ -291,10 +337,20 @@ def _executar_licoes(estado: Estado) -> str:
         with licoes_context(id_ciclo=id_ciclo):
             return _executar_agente(licoes_agent, estado, "Crie uma lição aprendida para o ciclo ativo.")
     tool_name = "licoes_resumir" if any(marker in normalized for marker in ("resuma", "resumo das licoes", "sintetize as licoes")) else "licoes_perguntar"
-    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
-    if tool_name == "licoes_perguntar":
-        arguments["pergunta"] = question
-    result = call_acta_tool(tool_name, arguments)
+    query_ids = _ciclos_para_consulta(estado, question)
+    if not query_ids:
+        return "Qual ciclo devo consultar?"
+    results = []
+    for cycle_id in query_ids:
+        arguments: dict[str, Any] = {"id_ciclo": cycle_id}
+        if tool_name == "licoes_perguntar":
+            arguments["pergunta"] = question
+        results.append(call_acta_tool(tool_name, arguments))
+    if len(results) > 1:
+        return "Resultados por ciclo: " + json.dumps(
+            dict(zip(query_ids, results, strict=True)), ensure_ascii=False, default=str
+        )
+    result = results[0]
     if isinstance(result, dict):
         if result.get("status") == "sem_evidencia":
             return "Não encontrei lições com evidências suficientes para responder essa pergunta."
@@ -654,6 +710,28 @@ def no_roteador(estado: Estado) -> dict:
     if not selected:
         selected = ["rag"]
 
+    cycle_specialists = {"ciclo", "licoes", "tarefas", "colaboradores", "formularios", "indicadores", "relatorios", "predicoes"}
+    cycle_ids = _ids_ciclo_estado(estado)
+    if cycle_specialists.intersection(selected) and not cycle_ids:
+        return {
+            "agentes_chamados": ["roteador"],
+            "rota": "fim",
+            "resposta_final": "Informe o ciclo que devo consultar para responder sobre dados do ACTA.",
+            "latencias_ms": _latencias(estado, "roteador", inicio),
+        }
+    if (
+        len(cycle_ids) > 1
+        and estado.get("ciclo_ativo") is None
+        and cycle_specialists.intersection(selected)
+        and not _pergunta_abrangente(question)
+    ):
+        return {
+            "agentes_chamados": ["roteador"],
+            "rota": "fim",
+            "resposta_final": "Qual ciclo devo consultar? Se quiser uma resposta comparativa, peça para comparar os ciclos.",
+            "latencias_ms": _latencias(estado, "roteador", inicio),
+        }
+
     return {
         "agentes_chamados": ["roteador"],
         "rota": "especialistas",
@@ -674,17 +752,32 @@ _TOOL_PADRAO_ESPECIALISTA = {
 }
 
 
+def _resultado_tool_falhou(result: Any) -> bool:
+    return isinstance(result, dict) and result.get("status") in {
+        "error",
+        "forbidden",
+        "not_found",
+        "invalid_input",
+    }
+
+
 def _evidencia_bem_sucedida(evidence: list[dict[str, Any]]) -> bool:
     return any(
-        not (
-            isinstance(item.get("resultado"), dict)
-            and item["resultado"].get("status") == "error"
-        )
+        not _resultado_tool_falhou(item.get("resultado"))
         for item in evidence
     )
 
 
 def _formatar_metas_confirmadas(result: Any) -> str | None:
+    if isinstance(result, list):
+        sections = []
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            formatted = _formatar_metas_confirmadas(item.get("resultado"))
+            if formatted is not None:
+                sections.append(f"Ciclo {item.get('id_ciclo')}:\n{formatted}")
+        return "\n\n".join(sections) if sections and len(sections) == len(result) else None
     if not isinstance(result, dict) or not isinstance(result.get("metas"), list):
         return None
     metas = [item for item in result["metas"] if isinstance(item, dict)]
@@ -707,6 +800,18 @@ def _formatar_metas_confirmadas(result: Any) -> str | None:
         )
     lines.append("Informe o número ou o nome da meta para eu dar uma resposta única.")
     return "\n".join(lines)
+
+
+def _resultados_indicadores(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id_ciclo": item.get("argumentos", {}).get("id_ciclo"),
+            "resultado": item["resultado"],
+        }
+        for item in evidence
+        if item.get("tool") == "predicoes_atingimento_meta"
+        and not _resultado_tool_falhou(item.get("resultado"))
+    ]
 
 
 def _formatar_resultado_forcado(
@@ -745,18 +850,24 @@ def _formatar_resultado_forcado(
 
 
 def _consultar_tool_padrao(name: str, estado: Estado) -> Any:
-    id_ciclo = estado.get("id_ciclo")
-    if id_ciclo is None:
+    legacy_scalar_cycle_id = isinstance(estado.get("id_ciclo"), int)
+    cycle_ids = _ids_ciclo_estado(estado)
+    if not cycle_ids:
         return None
-
-    arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
-    if name == "licoes":
-        user_message = _ultima_mensagem(estado, "human")
-        arguments["pergunta"] = _texto_mensagem(user_message).strip() if user_message else ""
-        return call_acta_tool(_TOOL_PADRAO_ESPECIALISTA[name], arguments)
-    if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
-        arguments["limit"] = 50
-    return call_acta_tool(_TOOL_PADRAO_ESPECIALISTA[name], arguments)
+    user_message = _ultima_mensagem(estado, "human")
+    question = _texto_mensagem(user_message).strip() if user_message else ""
+    query_ids = _ciclos_para_consulta(estado, question)
+    if not query_ids:
+        return None
+    results = []
+    for id_ciclo in query_ids:
+        arguments: dict[str, Any] = {"id_ciclo": id_ciclo}
+        if name == "licoes":
+            arguments["pergunta"] = question
+        if name in {"tarefas", "colaboradores", "formularios", "relatorios"}:
+            arguments["limit"] = 50
+        results.append(call_acta_tool(_TOOL_PADRAO_ESPECIALISTA[name], arguments))
+    return results[0] if legacy_scalar_cycle_id and len(results) == 1 else results
 
 
 def _garantir_evidencia_tool(
@@ -767,27 +878,20 @@ def _garantir_evidencia_tool(
     """Executa uma consulta segura quando o modelo não realizou a chamada exigida."""
 
     if name == "indicadores":
-        indicator_result = next(
-            (
-                item.get("resultado")
-                for item in evidence
-                if item.get("tool") == "predicoes_atingimento_meta"
-                and not (
-                    isinstance(item.get("resultado"), dict)
-                    and item["resultado"].get("status") == "error"
-                )
-            ),
-            None,
-        )
-        if isinstance(indicator_result, dict) and isinstance(indicator_result.get("metas"), list):
-            return _formatar_resultado_forcado(estado, indicator_result, specialist=name)
+        indicator_results = _resultados_indicadores(evidence)
+        if indicator_results and any(
+            isinstance(item["resultado"], dict)
+            and isinstance(item["resultado"].get("metas"), list)
+            for item in indicator_results
+        ):
+            result_to_format: Any = indicator_results[0]["resultado"]
+            if len(indicator_results) > 1:
+                result_to_format = indicator_results
+            return _formatar_resultado_forcado(estado, result_to_format, specialist=name)
 
     has_required_indicator_evidence = any(
         item.get("tool") == "predicoes_atingimento_meta"
-        and not (
-            isinstance(item.get("resultado"), dict)
-            and item["resultado"].get("status") == "error"
-        )
+        and not _resultado_tool_falhou(item.get("resultado"))
         for item in evidence
     )
     if _evidencia_bem_sucedida(evidence) and (
@@ -805,7 +909,7 @@ def _garantir_evidencia_tool(
         result = call_acta_tool("faq_retriever", {"question": question, "limit": 3})
         return _formatar_resultado_forcado(estado, result, specialist=name)
 
-    if estado.get("id_ciclo") is None:
+    if not _ids_ciclo_estado(estado):
         return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
 
     result = _consultar_tool_padrao(name, estado)
@@ -826,7 +930,7 @@ def _fallback_factual_sem_modelo(
         call_acta_tool("faq_retriever", {"question": question, "limit": 3})
         return "A consulta foi realizada, mas não foi possível gerar a resposta neste momento."
 
-    if estado.get("id_ciclo") is None:
+    if not _ids_ciclo_estado(estado):
         return "Informe o ciclo que deseja consultar para que eu possa responder com dados confirmados."
 
     _consultar_tool_padrao(name, estado)
@@ -847,7 +951,17 @@ def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[s
             {"acta.specialist": name},
         ):
             try:
-                answer = REGISTRO_ESPECIALISTAS[name](estado)
+                user_message = _ultima_mensagem(estado, "human")
+                question = _texto_mensagem(user_message).strip() if user_message else ""
+                if name != "rag" and _pergunta_abrangente(question):
+                    result = _consultar_tool_padrao(name, estado)
+                    answer = (
+                        _formatar_resultado_forcado(estado, result, specialist=name)
+                        if result is not None
+                        else "Informe os ciclos para que eu possa comparar os dados."
+                    )
+                else:
+                    answer = REGISTRO_ESPECIALISTAS[name](estado)
                 forced_answer = _garantir_evidencia_tool(name, estado, evidence)
                 if forced_answer is not None:
                     answer = forced_answer
@@ -855,14 +969,13 @@ def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[s
                     confirmed_results = [item["resultado"] for item in evidence]
                     result_to_format: Any = confirmed_results
                     if name == "indicadores":
-                        result_to_format = next(
-                            (
-                                item["resultado"]
-                                for item in evidence
-                                if item.get("tool") == "predicoes_atingimento_meta"
-                            ),
-                            confirmed_results,
-                        )
+                        indicator_results = _resultados_indicadores(evidence)
+                        if indicator_results:
+                            result_to_format = (
+                                indicator_results[0]["resultado"]
+                                if len(indicator_results) == 1
+                                else indicator_results
+                            )
                     answer = _formatar_resultado_forcado(
                         estado,
                         result_to_format,

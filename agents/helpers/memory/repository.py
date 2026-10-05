@@ -10,9 +10,9 @@ from pymongo.database import Database
 from qdrant_client import QdrantClient, models
 
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.embeddings import gerar_embedding
-from utils.errors import AuthorizationError, NotFoundError
-from utils.serialization import serialize
+from agents.helpers.embeddings import gerar_embedding
+from agents.helpers.errors import AuthorizationError, NotFoundError
+from agents.helpers.serialization import serialize
 
 logger = logging.getLogger(__name__)
 
@@ -157,14 +157,27 @@ class MemoryRepository:
                 )
 
     def cleanup_expired(self, context: RequestContext | None = None) -> int:
+        now = datetime.now(UTC)
         query: dict[str, Any] = {
-            "status": {"$in": ["ativa", "expirada_indice_pendente"]},
-            "expira_em": {"$ne": None, "$lte": datetime.now(UTC)},
+            "$or": [
+                {"status": "excluida_indice_pendente"},
+                {
+                    "status": {"$in": ["ativa", "expirada_indice_pendente"]},
+                    "expira_em": {"$ne": None, "$lte": now},
+                },
+            ]
         }
         if context is not None:
             query.update(self._owner(context))
-        memory_ids = [item["_id"] for item in self.memories.find(query, {"_id": 1})]
-        message_query: dict[str, Any] = {"expira_em": {"$lte": datetime.now(UTC)}}
+        expired_memory_ids: list[str] = []
+        deleted_memory_ids: list[str] = []
+        for item in self.memories.find(query, {"_id": 1, "status": 1}):
+            if item.get("status") == "excluida_indice_pendente":
+                deleted_memory_ids.append(item["_id"])
+            else:
+                expired_memory_ids.append(item["_id"])
+        memory_ids = expired_memory_ids + deleted_memory_ids
+        message_query: dict[str, Any] = {"expira_em": {"$lte": now}}
         if context is not None:
             message_query.update(self._owner(context))
         message_ids = [item["_id"] for item in self.messages.find(message_query, {"_id": 1})]
@@ -182,10 +195,16 @@ class MemoryRepository:
                 except Exception:  # noqa: BLE001 - mantém bloqueado no Mongo e tenta depois
                     status = "expirada_indice_pendente"
                     logger.exception("Não foi possível remover vetores de memória expirados do Qdrant.")
-            self.memories.update_many(
-                {"_id": {"$in": memory_ids}},
-                {"$set": {"status": status, "expirada_em": datetime.now(UTC)}},
-            )
+            if expired_memory_ids:
+                self.memories.update_many(
+                    {"_id": {"$in": expired_memory_ids}},
+                    {"$set": {"status": status, "expirada_em": now}},
+                )
+            if deleted_memory_ids and status != "expirada_indice_pendente":
+                self.memories.update_many(
+                    {"_id": {"$in": deleted_memory_ids}},
+                    {"$set": {"status": "excluida"}},
+                )
         if message_ids:
             if self.qdrant is None:
                 self.messages.delete_many({"_id": {"$in": message_ids}})
@@ -540,16 +559,30 @@ class MemoryRepository:
         ]
 
     def delete_memory(self, context: RequestContext, memory_id: str) -> bool:
+        now = datetime.now(UTC)
+        deleted_status = "excluida" if self.qdrant is None else "excluida_indice_pendente"
         result = self.memories.update_one(
             {"_id": memory_id, **self._owner(context), "status": "ativa"},
-            {"$set": {"status": "excluida", "excluida_em": datetime.now(UTC)}},
+            {"$set": {"status": deleted_status, "excluida_em": now}},
         )
         if result.matched_count:
             if self.qdrant is not None:
-                self.qdrant.delete(
-                    collection_name=self.memories_collection_name,
-                    points_selector=models.PointIdsList(points=[memory_id]),
-                    wait=True,
-                )
+                try:
+                    self.qdrant.delete(
+                        collection_name=self.memories_collection_name,
+                        points_selector=models.PointIdsList(points=[memory_id]),
+                        wait=True,
+                    )
+                except Exception:  # noqa: BLE001 - cleanup_expired retries vector removal
+                    logger.exception("Failed to remove deleted memory vector from Qdrant.")
+                else:
+                    self.memories.update_one(
+                        {
+                            "_id": memory_id,
+                            **self._owner(context),
+                            "status": "excluida_indice_pendente",
+                        },
+                        {"$set": {"status": "excluida"}},
+                    )
             return True
         return False

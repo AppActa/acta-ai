@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from utils import embeddings
+from agents.helpers import embeddings
 
 
 def test_embedding_requires_a_gemini_key(monkeypatch) -> None:

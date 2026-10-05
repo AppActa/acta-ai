@@ -5,7 +5,7 @@ from time import perf_counter
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.estado import consolidar_memoria
 from clients.client_transcricao import transcrever_audio
@@ -45,9 +45,34 @@ class NovaSessaoRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str = Field(..., min_length=1)
-    id_ciclo: int | None = Field(default=None, gt=0)
+    id_ciclo: list[int] = Field(default_factory=list, max_length=20)
+    ciclo_ativo: int | None = Field(default=None, gt=0)
     usuario_id: int = Field(..., gt=0)
     empresa_id: int = Field(..., gt=0)
+
+    @field_validator("id_ciclo", mode="before")
+    @classmethod
+    def _aceitar_ciclo_legado(cls, cycles: object) -> object:
+        if cycles is None:
+            return []
+        if isinstance(cycles, int):
+            return [cycles]
+        return cycles
+
+    @field_validator("id_ciclo")
+    @classmethod
+    def _normalizar_ciclos(cls, cycles: list[int]) -> list[int]:
+        if len(cycles) > 20:
+            raise ValueError("id_ciclo aceita no máximo 20 ciclos.")
+        if any(cycle <= 0 for cycle in cycles):
+            raise ValueError("id_ciclo deve conter somente inteiros positivos.")
+        return list(dict.fromkeys(cycles))
+
+    @model_validator(mode="after")
+    def _validar_ciclo_ativo(self) -> "ChatRequest":
+        if self.ciclo_ativo is not None and self.ciclo_ativo not in self.id_ciclo:
+            raise ValueError("ciclo_ativo deve estar presente em id_ciclo.")
+        return self
 
 
 class ConsentimentoRequest(BaseModel):
@@ -133,6 +158,7 @@ def chat(request: ChatRequest) -> dict[str, str]:
                     message=message,
                     session_id=session_id,
                     id_ciclo=request.id_ciclo,
+                    ciclo_ativo=request.ciclo_ativo,
                     empresa_id=request.empresa_id,
                 )
         except SkillClientError as exc:
@@ -151,8 +177,20 @@ async def chat_audio(
     session_id: str = Form(..., min_length=1),
     usuario_id: int = Form(..., gt=0),
     empresa_id: int = Form(..., gt=0),
-    id_ciclo: int | None = Form(default=None, gt=0),
+    id_ciclo: list[int] = Form(default_factory=list),  # noqa: B008 - default de formulário
+    ciclo_ativo: int | None = Form(default=None, gt=0),
 ) -> dict[str, str]:
+    try:
+        scope = ChatRequest(
+            message="audio",
+            session_id=session_id,
+            id_ciclo=id_ciclo,
+            ciclo_ativo=ciclo_ativo,
+            usuario_id=usuario_id,
+            empresa_id=empresa_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     conteudo = await audio.read()
 
     if not conteudo:
@@ -184,7 +222,8 @@ async def chat_audio(
             resposta = get_response(
                 message=transcricao,
                 session_id=session_id,
-                id_ciclo=id_ciclo,
+                id_ciclo=scope.id_ciclo,
+                ciclo_ativo=scope.ciclo_ativo,
                 empresa_id=empresa_id,
             )
         except SkillClientError as exc:
@@ -211,7 +250,11 @@ def consultar_memorias(
 
 
 @app.delete("/memoria/{id_memoria}")
-def apagar_memoria(id_memoria: str, usuario_id: int, empresa_id: int) -> dict:
+def apagar_memoria(
+    id_memoria: str,
+    usuario_id: int,
+    empresa_id: int,
+) -> dict:
     """Remove um item da fonte MongoDB e do índice semântico Qdrant."""
 
     with mcp_request_context(
@@ -234,7 +277,10 @@ def buscar_memorias_semanticamente(
 
 
 @app.get("/memoria/consentimento")
-def consultar_consentimento(usuario_id: int, empresa_id: int) -> dict:
+def consultar_consentimento(
+    usuario_id: int,
+    empresa_id: int,
+) -> dict:
     with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
         return obter_consentimento()
 

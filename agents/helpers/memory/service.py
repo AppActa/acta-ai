@@ -2,9 +2,9 @@ from datetime import datetime
 from typing import Any
 
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.errors import NotFoundError
-from utils.memory.repository import MemoryRepository
-from utils.memory.schemas import ConsentInput, MemoryInput, MessageInput, SessionInput
+from agents.helpers.errors import NotFoundError
+from agents.helpers.memory.repository import MemoryRepository
+from agents.helpers.memory.schemas import ConsentInput, MemoryInput, MessageInput, SessionInput
 
 
 def _format_messages(messages: list[dict[str, Any]]) -> str:
@@ -36,8 +36,11 @@ class MemoryService:
         self, context: RequestContext, question: str, limit: int
     ) -> list[dict[str, Any]]:
         if getattr(self.repository, "qdrant", object()) is None:
-            raise RuntimeError("Qdrant é obrigatório para buscar memórias semanticamente.")
-        return self.repository.semantic_search(context, question, limit)
+            return self.repository.list_memories(context, tipo=None, limit=limit)
+        try:
+            return self.repository.semantic_search(context, question, limit)
+        except Exception:
+            return self.repository.list_memories(context, tipo=None, limit=limit)
 
     def garantir_sessao(
         self, context: RequestContext, *, session_id: str, metadata: dict[str, Any] | None = None

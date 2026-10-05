@@ -6,6 +6,7 @@ import socket
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import copy_context
 from contextvars import ContextVar
 from dataclasses import dataclass
 from time import perf_counter
@@ -50,6 +51,21 @@ _tool_evidence: ContextVar[list[dict[str, object]] | None] = ContextVar(
     "acta_ai_mcp_tool_evidence",
     default=None,
 )
+_cycle_scope: ContextVar[frozenset[int] | None] = ContextVar(
+    "acta_ai_cycle_scope",
+    default=None,
+)
+
+
+@contextmanager
+def mcp_cycle_scope_context(cycle_ids: list[int]) -> Iterator[None]:
+    """Limita as chamadas MCP desta rodada aos ciclos recebidos pelo chatbot."""
+
+    token = _cycle_scope.set(frozenset(cycle_ids))
+    try:
+        yield
+    finally:
+        _cycle_scope.reset(token)
 
 
 @contextmanager
@@ -256,7 +272,7 @@ def _run_async_in_sync_context(tool_name: str, arguments: dict) -> dict | str:
         except Exception as exc:  # noqa: BLE001 - propagado para a thread chamadora
             error.append(exc)
 
-    thread = threading.Thread(target=runner, daemon=True)
+    thread = threading.Thread(target=copy_context().run, args=(runner,), daemon=True)
     thread.start()
     thread.join()
     if error:
@@ -270,13 +286,20 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     sanitized = {
         key: value for key, value in arguments.items() if value is not None and key != "id_empresa"
     }
-    cache = (
-        None
-        if tool_name
-        in {
-        }
-        else _request_cache.get()
-    )
+    allowed_cycles = _cycle_scope.get()
+    if allowed_cycles is not None and tool_name != "faq_retriever" and (
+        not allowed_cycles or sanitized.get("id_ciclo") not in allowed_cycles
+    ):
+        result = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
+        _record_tool_evidence(tool_name, sanitized, result, cached=False)
+        record_mcp_tool_call(
+            tool_name,
+            (perf_counter() - started) * 1000,
+            status="forbidden",
+            cached=False,
+        )
+        return result
+    cache = _request_cache.get()
     cache_key = json.dumps(
         [tool_name, sanitized],
         sort_keys=True,

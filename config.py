@@ -15,6 +15,7 @@ load_dotenv()
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+JEV_API_KEY = os.getenv("JEV_API_KEY")
 
 ACTA_GROQ_PRIMARY_MODEL = "openai/gpt-oss-120b"
 ACTA_GROQ_FAST_MODEL = "openai/gpt-oss-20b"

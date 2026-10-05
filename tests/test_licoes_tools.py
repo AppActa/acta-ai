@@ -48,7 +48,13 @@ def test_runtime_router_selects_lessons_without_calling_the_llm(monkeypatch) -> 
     from agents import estado
 
     monkeypatch.setattr(estado.router, "invoke", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("LLM router should not run")))
-    result = no_roteador({"messages": [HumanMessage(content="O que aprendemos no ciclo 1?")], "latencias_ms": {}})
+    result = no_roteador(
+        {
+            "messages": [HumanMessage(content="O que aprendemos no ciclo 1?")],
+            "id_ciclo": 1,
+            "latencias_ms": {},
+        }
+    )
 
     assert result["rota"] == "especialistas"
     assert result["especialistas"] == ["licoes"]

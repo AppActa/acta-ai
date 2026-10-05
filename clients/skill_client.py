@@ -5,7 +5,7 @@ import unicodedata
 from typing import Any
 
 from clients.mcp_acta_client import current_mcp_request_context
-from utils.runtime import get_skills_service
+from agents.helpers.runtime import get_skills_service
 
 _SKILL_COMMAND = re.compile(
     r"^/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+(?P<message>[\s\S]+))?$"

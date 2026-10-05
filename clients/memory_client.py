@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from clients.mcp_acta_client import current_mcp_request_context
-from utils.runtime import get_memory_service
+from agents.helpers.runtime import get_memory_service
 
 
 def garantir_sessao(session_id: str, metadata: dict[str, Any] | None = None) -> None:

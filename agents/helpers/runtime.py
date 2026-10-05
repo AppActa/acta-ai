@@ -17,10 +17,10 @@ from config import (
     QDRANT_MEMORY_VECTOR_SIZE,
     QDRANT_TIMEOUT_SECONDS,
 )
-from utils.memory.repository import MemoryRepository
-from utils.memory.service import MemoryService
-from utils.skills.repository import SkillsRepository
-from utils.skills.service import SkillsService
+from agents.helpers.memory.repository import MemoryRepository
+from agents.helpers.memory.service import MemoryService
+from agents.helpers.skills.repository import SkillsRepository
+from agents.helpers.skills.service import SkillsService
 
 
 @lru_cache(maxsize=1)

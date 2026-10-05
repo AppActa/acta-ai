@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 import agents.estado as state_module
 import pipeline as pipeline_module
@@ -102,12 +102,156 @@ def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
         },
     )
 
-    response = get_response("Como está o ciclo?", f"teste::{uuid4()}", id_ciclo=7)
+    response = get_response("Como está o ciclo?", f"teste::{uuid4()}", id_ciclo=[7])
 
     assert response == "Dados do ciclo"
     system_message = cycle_agent.calls[0]["messages"][0]
     assert system_message.type == "system"
-    assert "ID do ciclo autorizado nesta requisição: 7" in system_message.content
+    assert "IDs de ciclos autorizados nesta requisição, na ordem de consulta: [7]" in system_message.content
+
+
+def test_get_response_accepts_legacy_single_cycle_id(monkeypatch) -> None:
+    _disable_external_memory(monkeypatch)
+    cycle_agent = FakeAgent("Dados do ciclo")
+    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(state_module, "guardrail_saida", lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer})
+
+    response = get_response("Como está o ciclo?", f"teste::{uuid4()}", id_ciclo=7)
+
+    assert response == "Dados do ciclo"
+    assert "IDs de ciclos autorizados nesta requisição, na ordem de consulta: [7]" in (
+        cycle_agent.calls[0]["messages"][0].content
+    )
+
+
+def test_get_response_rejects_more_than_20_cycles() -> None:
+    with pytest.raises(ValueError, match="20 ciclos"):
+        get_response("Compare os ciclos", f"teste::{uuid4()}", id_ciclo=list(range(1, 22)))
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Compare os ciclos", True),
+        ("Compara os ciclos", True),
+        ("Faça uma análise comparativa", True),
+        ("Comparecimento na reunião", False),
+    ],
+)
+def test_comparative_question_detection(question: str, expected: bool) -> None:
+    assert pipeline_module._pergunta_comparativa(question) is expected
+
+
+def test_pipeline_prioritizes_active_cycle_and_sends_ordered_scope(monkeypatch) -> None:
+    _disable_external_memory(monkeypatch)
+    calls = []
+    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda name, args: calls.append((name, args.copy())) or {"status": "ok"})
+    monkeypatch.setattr(state_module, "_formatar_resultado_forcado", lambda *_args, **_kwargs: "Comparação")
+    monkeypatch.setattr(state_module, "guardrail_saida", lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer})
+
+    answer = get_response("Compare os ciclos", f"teste::{uuid4()}", id_ciclo=[8, 4, 8], ciclo_ativo=4)
+
+    assert answer == "Comparação"
+    assert calls == [
+        ("ciclo_visao_geral", {"id_ciclo": 4}),
+        ("ciclo_visao_geral", {"id_ciclo": 8}),
+    ]
+
+
+def test_cycle_query_without_scope_does_not_call_mcp_tools(monkeypatch) -> None:
+    _disable_external_memory(monkeypatch)
+    calls = []
+    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(state_module, "ciclo_agent", FakeAgent("Não informado"))
+
+    answer = get_response("Qual é a situação do ciclo?", f"teste::{uuid4()}")
+
+    assert "informe" in answer.lower() and "ciclo" in answer.lower()
+    assert calls == []
+
+
+def test_default_specialist_accepts_legacy_scalar_cycle_id(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        state_module,
+        "call_acta_tool",
+        lambda name, args: calls.append((name, args.copy())) or {"status": "ok"},
+    )
+    state = {
+        "id_ciclo": 7,
+        "messages": [HumanMessage(content="Como está o ciclo?")],
+    }
+
+    result = state_module._consultar_tool_padrao("ciclo", state)
+
+    assert result == {"status": "ok"}
+    assert calls == [("ciclo_visao_geral", {"id_ciclo": 7})]
+
+
+def test_default_specialist_keeps_list_shape_for_single_cycle(monkeypatch) -> None:
+    monkeypatch.setattr(
+        state_module,
+        "call_acta_tool",
+        lambda _name, _args: {"status": "ok"},
+    )
+    state = {
+        "id_ciclo": [7],
+        "messages": [HumanMessage(content="Como está o ciclo?")],
+    }
+
+    result = state_module._consultar_tool_padrao("ciclo", state)
+
+    assert result == [{"status": "ok"}]
+
+
+def test_default_specialist_queries_each_allowed_cycle_individually(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda name, args: calls.append((name, args.copy())) or {"status": "ok"})
+    state = {
+        "id_ciclo": [4, 8],
+        "ciclo_ativo": 4,
+        "messages": [HumanMessage(content="Compare os ciclos")],
+    }
+
+    result = state_module._consultar_tool_padrao("ciclo", state)
+
+    assert result == [{"status": "ok"}, {"status": "ok"}]
+    assert calls == [
+        ("ciclo_visao_geral", {"id_ciclo": 4}),
+        ("ciclo_visao_geral", {"id_ciclo": 8}),
+    ]
+
+
+def test_comparative_specialist_fans_out_only_to_scoped_cycles(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "false")
+    monkeypatch.setattr(
+        state_module,
+        "call_acta_tool",
+        lambda name, args: calls.append((name, args.copy())) or {"status": "ok", "id": args["id_ciclo"]},
+    )
+    monkeypatch.setattr(state_module, "_formatar_resultado_forcado", lambda *_args, **_kwargs: "Comparação")
+    state = {
+        "especialistas": ["ciclo"],
+        "messages": [HumanMessage(content="Compare os ciclos")],
+        "id_ciclo": [4, 8],
+        "ciclo_ativo": 4,
+    }
+
+    responses, _ = state_module.executar_especialistas(state)
+
+    assert calls == [
+        ("ciclo_visao_geral", {"id_ciclo": 4}),
+        ("ciclo_visao_geral", {"id_ciclo": 8}),
+    ]
+    assert responses[0]["resposta"] == "Comparação"
 
 
 def test_specialists_are_functions_not_graph_nodes() -> None:
@@ -168,7 +312,7 @@ def test_router_can_call_multiple_specialists(monkeypatch) -> None:
     response = get_response(
         "Como está o ciclo e quais tarefas estão atrasadas?",
         f"teste::{uuid4()}",
-        id_ciclo=4,
+        id_ciclo=[4],
     )
 
     assert response == "Resposta consolidada"
@@ -204,7 +348,7 @@ def test_orchestrator_always_uses_llm_for_multiple_answers(monkeypatch) -> None:
     response = get_response(
         "Mostre a situação do ciclo e as tarefas atrasadas.",
         f"teste::{uuid4()}",
-        id_ciclo=4,
+        id_ciclo=[4],
     )
 
     assert response == "Resposta consolidada pelo orquestrador"
@@ -311,6 +455,7 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     response = get_response(
         "/resumo-executivo Como está o ciclo?",
         f"teste::{uuid4()}",
+        id_ciclo=[7],
     )
 
     assert response == "Resposta formatada pela skill"
@@ -408,7 +553,7 @@ def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch)
     response = get_response(
         "Resuma as lições aprendidas do ciclo.",
         f"teste::{uuid4()}",
-        id_ciclo=7,
+        id_ciclo=[7],
         empresa_id=4,
     )
 

@@ -10,6 +10,5 @@ build/
 *.egg-info/
 .ruff_cache/
 .mypy_cache/
-.worktrees/
 vectorstores/
 TO_DO.md
