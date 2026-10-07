@@ -7,7 +7,6 @@ from langchain_core.messages import HumanMessage
 import agents.estado as state_module
 import agents.guardrail as guardrail_module
 import clients.mcp_acta_client as mcp_client
-from agents.estado import rotear_deterministicamente
 from clients.mcp_acta_client import mcp_request_context
 
 
@@ -20,7 +19,7 @@ def _state(*specialists: str) -> dict:
         "respostas_especialistas": [],
         "mapa_pii": {},
         "session_id": "optimization::test",
-        "id_ciclo": 1,
+        "id_ciclo": [1],
         "contexto_memoria": "",
         "resposta_final": "",
         "latencias_ms": {},
@@ -54,130 +53,29 @@ def test_specialists_run_in_parallel_and_keep_mcp_context(monkeypatch) -> None:
     assert {item["resposta"] for item in responses} == {"7:9:trace-paralelo"}
 
 
-def test_specialist_without_tool_call_gets_verified_evidence(monkeypatch) -> None:
-    class Formatter:
-        def invoke(self, _prompt: str) -> HumanMessage:
-            return HumanMessage(content="A meta está em andamento com dados confirmados.")
-
-    monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "true")
-    monkeypatch.setattr(
-        state_module,
-        "REGISTRO_ESPECIALISTAS",
-        {"indicadores": lambda _estado: "Vou consultar os dados."},
-    )
-    monkeypatch.setattr(state_module, "llm_fast", Formatter())
-    monkeypatch.setattr(
-        mcp_client,
-        "_run_async_in_sync_context",
-        lambda tool_name, arguments: {
-            "status": "ok",
-            "tool_recebida": tool_name,
-            "id_ciclo": arguments["id_ciclo"],
-        },
-    )
-
-    with mcp_request_context(usuario_id=1, empresa_id=1):
-        responses, called = state_module.executar_especialistas(_state("indicadores"))
-
-    assert called == ["indicadores"]
-    assert responses[0]["resposta"] == "A meta está em andamento com dados confirmados."
-    assert responses[0]["evidencias"][0]["tool"] == "predicoes_atingimento_meta"
-
-
-def test_indicators_are_formatted_from_confirmed_tool_evidence(monkeypatch) -> None:
-    monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "true")
-
-    def specialist(_estado: dict) -> str:
-        state_module.call_acta_tool("predicoes_atingimento_meta", {"id_ciclo": 1})
-        return "Meta 1 atingida, diferenca absoluta 5591 e variacao 8,02%."
-
-    monkeypatch.setattr(
-        state_module,
-        "REGISTRO_ESPECIALISTAS",
-        {"indicadores": specialist},
-    )
-    monkeypatch.setattr(
-        mcp_client,
-        "_run_async_in_sync_context",
-        lambda _tool_name, _arguments: {
-            "status": "ok",
-            "id_ciclo": 1,
-            "metas": [
-                {
-                    "id_meta": 1,
-                    "objetivo": "Reduzir refugo",
-                    "status_atual": "ATINGIDA",
-                    "valor_base": 18.0,
-                    "valor_alvo": 5.0,
-                    "unidade": "%",
-                }
-            ],
-        },
-    )
-
-    with mcp_request_context(usuario_id=1, empresa_id=1):
-        responses, called = state_module.executar_especialistas(_state("indicadores"))
-
-    assert called == ["indicadores"]
-    assert "diferenca absoluta" not in responses[0]["resposta"].lower()
-    assert "Meta 1: Reduzir refugo" in responses[0]["resposta"]
-    assert responses[0]["evidencias"][0]["tool"] == "predicoes_atingimento_meta"
-
-
-def test_default_specialist_tool_builds_standard_arguments(monkeypatch) -> None:
+@pytest.mark.parametrize("specialist", ["ciclo", "indicadores"])
+def test_specialist_answer_is_not_replaced_by_graph_tool_fallback(
+    monkeypatch,
+    specialist: str,
+) -> None:
     calls = []
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        specialist,
+        lambda _state: "Resposta produzida pelo especialista.",
+    )
     monkeypatch.setattr(
         state_module,
         "call_acta_tool",
-        lambda name, arguments: calls.append((name, arguments)) or {"status": "ok"},
+        lambda name, args: calls.append((name, args)) or {"status": "ok"},
     )
 
-    result = state_module._consultar_tool_padrao("tarefas", _state("tarefas"))
+    responses, called = state_module.executar_especialistas(_state(specialist))
 
-    assert result == {"status": "ok"}
-    assert calls == [("tarefas_relatorio_completo", {"id_ciclo": 1, "limit": 50})]
-
-
-@pytest.mark.parametrize(
-    ("question", "expected"),
-    [
-        ("O que é o ACTA?", ["rag"]),
-        ("Como funciona o Ishikawa?", ["rag"]),
-        ("Mostre o Ishikawa do ciclo 1", ["ciclo"]),
-        ("Resuma as respostas dos formulários do ciclo 1", ["formularios"]),
-        ("Quais padrões aparecem nas respostas dos colaboradores?", ["formularios"]),
-        ("Quais causas foram mais citadas no Ishikawa?", ["formularios"]),
-        ("Como funciona um formulário do ACTA?", ["rag"]),
-        ("Como funciona um relatório do ACTA?", ["rag"]),
-        ("Gere um resumo executivo do ciclo 1", ["relatorios"]),
-        ("Mostre o relatório mais recente do ciclo 1", ["relatorios"]),
-        ("Prepare um texto para PPTX do ciclo 1", ["relatorios"]),
-        ("Qual a probabilidade de a tarefa 1 atrasar?", ["predicoes"]),
-        ("Faça uma previsão de conclusão do ciclo 1", ["predicoes"]),
-        ("Detecte respostas atípicas do formulário f-1", ["predicoes"]),
-        ("Qual a chance de atingirmos a meta do ciclo 1?", ["predicoes"]),
-        ("A meta principal foi atingida no ciclo 1?", ["indicadores"]),
-        ("Qual foi a variação percentual do indicador principal?", ["indicadores"]),
-        (
-            "Crie um relatório da fase Check com foco nos indicadores.",
-            ["relatorios", "indicadores"],
-        ),
-        (
-            "Gere um relatório executivo com a previsão de atraso do ciclo 1",
-            ["relatorios", "predicoes"],
-        ),
-        ("Como funciona uma previsão no ACTA?", ["rag"]),
-        ("Quais tarefas estão atrasadas no ciclo 1?", ["tarefas"]),
-        (
-            "Quais tarefas estão atrasadas e quais colaboradores podem assumi-las?",
-            ["tarefas", "colaboradores"],
-        ),
-        ("Qual é a situação do ciclo?", ["ciclo"]),
-        ("Bom dia", []),
-    ],
-)
-def test_deterministic_router(question: str, expected: list[str]) -> None:
-    assert rotear_deterministicamente(question) == expected
+    assert called == [specialist]
+    assert responses[0]["resposta"] == "Resposta produzida pelo especialista."
+    assert responses[0]["evidencias"] == []
+    assert calls == []
 
 
 def test_mcp_cache_is_limited_to_request_context(monkeypatch) -> None:
@@ -278,19 +176,3 @@ def test_output_guardrail_skips_optional_llm_review(monkeypatch) -> None:
     )
 
     assert result["mensagem"] == "Contato: [EMAIL OMITIDO]"
-
-
-def test_orchestrator_removes_task_reallocation_section_when_collaborator_exists() -> None:
-    answer = (
-        "### Tarefas atrasadas\nUma tarefa está atrasada.\n\n"
-        "### Sobre a realocação\nQuem deve assumir é outra análise."
-    )
-
-    scoped = state_module._limitar_resposta_ao_dominio(
-        "tarefas",
-        answer,
-        ["tarefas", "colaboradores"],
-    )
-
-    assert "Uma tarefa está atrasada" in scoped
-    assert "realocação" not in scoped

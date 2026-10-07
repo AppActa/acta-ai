@@ -1,4 +1,5 @@
 from uuid import uuid4
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
@@ -25,6 +26,40 @@ class FakeAgent:
         return self
 
 
+class FakeJevClient:
+    def __init__(self, message_type="negocio", selected=(), cycle_scope="ativo"):
+        self.message_type = message_type
+        self.selected = set(selected)
+        self.cycle_scope = cycle_scope
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def system_one(self, *, state, questions):
+        self.calls.append((state, questions))
+        return SimpleNamespace(
+            choices={
+                "tipo_mensagem": SimpleNamespace(choice=self.message_type),
+                "escopo_ciclos": SimpleNamespace(choice=self.cycle_scope),
+            },
+            nouls={
+                name: SimpleNamespace(noul=0.9 if name in self.selected else 0.1)
+                for name in questions
+                if name not in {"tipo_mensagem", "escopo_ciclos"}
+            }
+        )
+
+
+def _set_jev(monkeypatch, *, message_type="negocio", selected=(), cycle_scope="ativo"):
+    client = FakeJevClient(message_type, selected, cycle_scope)
+    monkeypatch.setattr(state_module, "TypeSafeClient", lambda **_kwargs: client)
+    return client
+
+
 def _disable_external_memory(monkeypatch) -> None:
     monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "false")
     monkeypatch.setattr(state_module, "_carregar_contexto_memoria", lambda *_: "")
@@ -44,8 +79,7 @@ def _disable_external_memory(monkeypatch) -> None:
 
 def test_blocked_message_stops_before_router(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    router = FakeAgent("ROUTE=rag")
-    monkeypatch.setattr(state_module, "router", router)
+    jev = _set_jev(monkeypatch, selected=("rag",))
     monkeypatch.setattr(
         state_module,
         "guardrail_entrada",
@@ -55,7 +89,7 @@ def test_blocked_message_stops_before_router(monkeypatch) -> None:
     response = get_response("mensagem perigosa", f"teste::{uuid4()}")
 
     assert response == "Bloqueada."
-    assert router.calls == []
+    assert jev.calls == []
 
 
 def test_faq_passes_through_router_and_output_guardrail(monkeypatch) -> None:
@@ -65,7 +99,7 @@ def test_faq_passes_through_router_and_output_guardrail(monkeypatch) -> None:
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=rag"))
+    _set_jev(monkeypatch, selected=("rag",))
     monkeypatch.setattr(state_module, "responder_faq", lambda _: "Resposta do FAQ")
     monkeypatch.setattr(
         state_module,
@@ -90,8 +124,16 @@ def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    _set_jev(monkeypatch, selected=("ciclo",))
+    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(cycle_agent, state),
+    )
     monkeypatch.setattr(
         state_module,
         "guardrail_saida",
@@ -114,9 +156,16 @@ def test_get_response_accepts_legacy_single_cycle_id(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     cycle_agent = FakeAgent("Dados do ciclo")
     monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    _set_jev(monkeypatch, selected=("ciclo",))
+    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(cycle_agent, state),
+    )
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "guardrail_saida", lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer})
 
     response = get_response("Como está o ciclo?", f"teste::{uuid4()}", id_ciclo=7)
@@ -145,29 +194,32 @@ def test_comparative_question_detection(question: str, expected: bool) -> None:
     assert pipeline_module._pergunta_comparativa(question) is expected
 
 
-def test_pipeline_prioritizes_active_cycle_and_sends_ordered_scope(monkeypatch) -> None:
+def test_router_uses_structured_comparative_scope_for_multiple_cycles(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    calls = []
     monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
-    monkeypatch.setattr(state_module, "call_acta_tool", lambda name, args: calls.append((name, args.copy())) or {"status": "ok"})
-    monkeypatch.setattr(state_module, "_formatar_resultado_forcado", lambda *_args, **_kwargs: "Comparação")
+    jev = _set_jev(monkeypatch, selected=("ciclo",), cycle_scope="comparacao")
+    cycle_agent = FakeAgent("Comparação")
+    monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(cycle_agent, state),
+    )
     monkeypatch.setattr(state_module, "guardrail_saida", lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer})
 
     answer = get_response("Compare os ciclos", f"teste::{uuid4()}", id_ciclo=[8, 4, 8], ciclo_ativo=4)
 
     assert answer == "Comparação"
-    assert calls == [
-        ("ciclo_visao_geral", {"id_ciclo": 4}),
-        ("ciclo_visao_geral", {"id_ciclo": 8}),
-    ]
+    assert len(jev.calls) == 1
+    agent_context = cycle_agent.calls[0]["messages"][0].content
+    assert "[4, 8]" in agent_context
 
 
 def test_cycle_query_without_scope_does_not_call_mcp_tools(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     calls = []
     monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo"))
+    _set_jev(monkeypatch, selected=("ciclo",))
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *args, **kwargs: calls.append((args, kwargs)))
     monkeypatch.setattr(state_module, "ciclo_agent", FakeAgent("Não informado"))
 
@@ -177,81 +229,29 @@ def test_cycle_query_without_scope_does_not_call_mcp_tools(monkeypatch) -> None:
     assert calls == []
 
 
-def test_default_specialist_accepts_legacy_scalar_cycle_id(monkeypatch) -> None:
-    calls = []
-    monkeypatch.setattr(
-        state_module,
-        "call_acta_tool",
-        lambda name, args: calls.append((name, args.copy())) or {"status": "ok"},
-    )
+@pytest.mark.parametrize(
+    ("scope", "cycle_ids", "active_cycle", "expected"),
+    [
+        ("ativo", [4, 8], 4, [4]),
+        ("todos", [4, 8], 4, [4, 8]),
+        ("comparacao", [4, 8], 4, [4, 8]),
+        ("ativo", [8], None, [8]),
+        ("ativo", [4, 8], None, []),
+    ],
+)
+def test_cycle_query_scope_comes_from_router_decision(
+    scope: str,
+    cycle_ids: list[int],
+    active_cycle: int | None,
+    expected: list[int],
+) -> None:
     state = {
-        "id_ciclo": 7,
-        "messages": [HumanMessage(content="Como está o ciclo?")],
+        "id_ciclo": cycle_ids,
+        "ciclo_ativo": active_cycle,
+        "escopo_ciclos": scope,
     }
 
-    result = state_module._consultar_tool_padrao("ciclo", state)
-
-    assert result == {"status": "ok"}
-    assert calls == [("ciclo_visao_geral", {"id_ciclo": 7})]
-
-
-def test_default_specialist_keeps_list_shape_for_single_cycle(monkeypatch) -> None:
-    monkeypatch.setattr(
-        state_module,
-        "call_acta_tool",
-        lambda _name, _args: {"status": "ok"},
-    )
-    state = {
-        "id_ciclo": [7],
-        "messages": [HumanMessage(content="Como está o ciclo?")],
-    }
-
-    result = state_module._consultar_tool_padrao("ciclo", state)
-
-    assert result == [{"status": "ok"}]
-
-
-def test_default_specialist_queries_each_allowed_cycle_individually(monkeypatch) -> None:
-    calls = []
-    monkeypatch.setattr(state_module, "call_acta_tool", lambda name, args: calls.append((name, args.copy())) or {"status": "ok"})
-    state = {
-        "id_ciclo": [4, 8],
-        "ciclo_ativo": 4,
-        "messages": [HumanMessage(content="Compare os ciclos")],
-    }
-
-    result = state_module._consultar_tool_padrao("ciclo", state)
-
-    assert result == [{"status": "ok"}, {"status": "ok"}]
-    assert calls == [
-        ("ciclo_visao_geral", {"id_ciclo": 4}),
-        ("ciclo_visao_geral", {"id_ciclo": 8}),
-    ]
-
-
-def test_comparative_specialist_fans_out_only_to_scoped_cycles(monkeypatch) -> None:
-    calls = []
-    monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "false")
-    monkeypatch.setattr(
-        state_module,
-        "call_acta_tool",
-        lambda name, args: calls.append((name, args.copy())) or {"status": "ok", "id": args["id_ciclo"]},
-    )
-    monkeypatch.setattr(state_module, "_formatar_resultado_forcado", lambda *_args, **_kwargs: "Comparação")
-    state = {
-        "especialistas": ["ciclo"],
-        "messages": [HumanMessage(content="Compare os ciclos")],
-        "id_ciclo": [4, 8],
-        "ciclo_ativo": 4,
-    }
-
-    responses, _ = state_module.executar_especialistas(state)
-
-    assert calls == [
-        ("ciclo_visao_geral", {"id_ciclo": 4}),
-        ("ciclo_visao_geral", {"id_ciclo": 8}),
-    ]
-    assert responses[0]["resposta"] == "Comparação"
+    assert state_module._ciclos_para_consulta(state) == expected
 
 
 def test_specialists_are_functions_not_graph_nodes() -> None:
@@ -291,13 +291,23 @@ def test_router_can_call_multiple_specialists(monkeypatch) -> None:
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    monkeypatch.setattr(
-        state_module,
-        "router",
-        FakeAgent("ESPECIALISTAS=ciclo,tarefas"),
-    )
+    _set_jev(monkeypatch, selected=("ciclo", "tarefas"))
+    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.tarefas_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setattr(state_module, "tarefas_agent", tasks_agent)
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(cycle_agent, state),
+    )
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "tarefas",
+        lambda state: state_module._executar_agente(tasks_agent, state),
+    )
     monkeypatch.setattr(state_module, "orquestrador", orchestrator)
     monkeypatch.setattr(
         state_module,
@@ -333,7 +343,21 @@ def test_orchestrator_always_uses_llm_for_multiple_answers(monkeypatch) -> None:
     )
     monkeypatch.setattr(state_module, "ciclo_agent", FakeAgent("Situação do ciclo"))
     monkeypatch.setattr(state_module, "tarefas_agent", FakeAgent("Tarefas atrasadas"))
-    monkeypatch.setattr(state_module, "router", FakeAgent("ROUTE=ciclo,tarefas"))
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(state_module.ciclo_agent, state),
+    )
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "tarefas",
+        lambda state: state_module._executar_agente(state_module.tarefas_agent, state),
+    )
+    _set_jev(monkeypatch, selected=("ciclo", "tarefas"))
+    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.tarefas_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "orquestrador", orchestrator)
     monkeypatch.setattr(
         state_module,
@@ -424,7 +448,10 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     specialist = FakeAgent("Fatos originais do ciclo")
     orchestrator = FakeAgent("Resposta formatada pela skill")
-    router = FakeAgent("ROUTE=ciclo")
+    jev = _set_jev(monkeypatch, selected=("ciclo",))
+    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(
         pipeline_module,
         "resolver_comando_skill",
@@ -443,8 +470,12 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    monkeypatch.setattr(state_module, "router", router)
     monkeypatch.setattr(state_module, "ciclo_agent", specialist)
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(specialist, state),
+    )
     monkeypatch.setattr(state_module, "orquestrador", orchestrator)
     monkeypatch.setattr(
         state_module,
@@ -459,8 +490,7 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     )
 
     assert response == "Resposta formatada pela skill"
-    router_message = router.calls[0]["messages"][0]
-    assert router_message.content == "Como está o ciclo?"
+    assert jev.calls[0][0]["mensagem_usuario"] == "Como está o ciclo?"
     specialist_messages = specialist.calls[0]["messages"]
     assert all("Resumo Executivo" not in str(message.content) for message in specialist_messages)
     orchestrator_prompt = orchestrator.calls[0]["messages"][0]["content"]
@@ -542,8 +572,7 @@ def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch)
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    router = FakeAgent("ROUTE=ciclo")
-    monkeypatch.setattr(state_module, "router", router)
+    jev = _set_jev(monkeypatch, selected=("licoes",))
     monkeypatch.setattr(
         state_module,
         "guardrail_saida",
@@ -559,5 +588,5 @@ def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch)
 
     assert response == "Resumo das lições.\n\nReferências: lição 2"
     assert tool_calls == [("licoes_resumir", {"id_ciclo": 7})]
-    assert router.calls == []
+    assert len(jev.calls) == 1
     assert not hasattr(pipeline_module, "enviar_pedido_licao")

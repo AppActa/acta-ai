@@ -2,20 +2,7 @@ import asyncio
 
 import pytest
 
-from agents.estado import (
-    _evidencia_bem_sucedida,
-    _formatar_metas_confirmadas,
-    _garantir_evidencia_tool,
-)
 from clients import mcp_acta_client
-
-
-@pytest.mark.parametrize(
-    ("status", "successful"),
-    [("forbidden", False), ("ok", True), ("sem_evidencia", True)],
-)
-def test_tool_evidence_classifies_failure_statuses(status: str, successful: bool) -> None:
-    assert _evidencia_bem_sucedida([{"resultado": {"status": status}}]) is successful
 
 
 def test_mcp_calls_outside_cycle_request_scope_are_not_sent(monkeypatch) -> None:
@@ -98,52 +85,3 @@ def test_contextvars_are_copied_to_helper_thread(monkeypatch) -> None:
     assert observed["request"].usuario_id == 3
     assert observed["request"].empresa_id == 4
     assert observed["cycles"] == frozenset({8, 4})
-
-
-def test_indicator_fallback_keeps_results_for_all_cycles(monkeypatch) -> None:
-    captured = []
-    monkeypatch.setattr(
-        "agents.estado._formatar_metas_confirmadas",
-        lambda _result: None,
-    )
-    monkeypatch.setattr(
-        "agents.estado._formatar_resultado_forcado",
-        lambda _state, result, **_kwargs: captured.append(result) or "Comparação",
-    )
-    evidence = [
-        {
-            "tool": "predicoes_atingimento_meta",
-            "argumentos": {"id_ciclo": cycle_id},
-            "resultado": {"metas": [{"id_meta": cycle_id}]},
-        }
-        for cycle_id in (4, 8)
-    ]
-
-    answer = _garantir_evidencia_tool("indicadores", {"id_ciclo": [4, 8]}, evidence)
-
-    assert answer == "Comparação"
-    assert captured == [
-        [
-            {"id_ciclo": 4, "resultado": {"metas": [{"id_meta": 4}]}},
-            {"id_ciclo": 8, "resultado": {"metas": [{"id_meta": 8}]}},
-        ]
-    ]
-
-
-def test_confirmed_indicator_metas_are_labeled_by_cycle() -> None:
-    formatted = _formatar_metas_confirmadas(
-        [
-            {
-                "id_ciclo": 4,
-                "resultado": {"metas": [{"id_meta": 40, "objetivo": "Meta do ciclo 4"}]},
-            },
-            {
-                "id_ciclo": 8,
-                "resultado": {"metas": [{"id_meta": 80, "objetivo": "Meta do ciclo 8"}]},
-            },
-        ]
-    )
-
-    assert formatted is not None
-    assert "Ciclo 4:" in formatted and "Meta do ciclo 4" in formatted
-    assert "Ciclo 8:" in formatted and "Meta do ciclo 8" in formatted

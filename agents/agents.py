@@ -15,7 +15,6 @@ from agents.prompts.prompt_licoes import LICOES_PROMPT_COMPLETO
 from agents.prompts.prompt_orquestrador import ORQUESTRADOR_PROMPT_COMPLETO
 from agents.prompts.prompt_predicao import PREDICAO_PROMPT_COMPLETO
 from agents.prompts.prompt_relatorio import RELATORIO_PROMPT_COMPLETO
-from agents.prompts.prompt_roteador import _PROMPT_ROTEADOR
 from agents.prompts.prompt_tarefas import TAREFAS_PROMPT_COMPLETO
 from clients.mcp_acta_client import call_acta_tool
 from tools.ciclo_tools import TOOLS as CICLO_TOOLS
@@ -79,13 +78,19 @@ tarefas_agent = create_agent(
     system_prompt=TAREFAS_PROMPT_COMPLETO,
 )
 
-router = create_agent(model=llm_fast, system_prompt=_PROMPT_ROTEADOR)
 orquestrador = create_agent(
     model=llm_fast,
     system_prompt=ORQUESTRADOR_PROMPT_COMPLETO,
 )
 juiz = create_agent(model=llm_fast, system_prompt=JUIZ_PROMPT_COMPLETO)
 
+saudacao_agent = create_agent(
+    model=llm_fast,
+    system_prompt=(
+        "Responda em português a saudações, agradecimentos ou conversa casual. "
+        "Seja breve, cordial e natural. Não invente informações."
+    ),
+)
 
 def responder_faq(pergunta: str) -> str:
     """Responde perguntas conceituais usando a base de conhecimento do ACTA."""
@@ -136,6 +141,5 @@ __all__ = [
     "predicoes_agent",
     "responder_faq",
     "relatorios_agent",
-    "router",
     "tarefas_agent",
 ]
