@@ -159,6 +159,13 @@ class MemoryService:
     def listar_chats(self, context: RequestContext, *, limit: int = 50) -> list[dict[str, Any]]:
         return self.repository.list_chats(context, min(max(limit, 1), 100))
 
+    def listar_mensagens(
+        self, context: RequestContext, *, session_id: str, limit: int = 30
+    ) -> list[dict[str, Any]]:
+        return self.repository.list_messages(
+            context, session_id, min(max(limit, 1), 100)
+        )
+
     def registrar(self, context: RequestContext, **kwargs: Any) -> bool:
         data = MemoryInput(**kwargs)
         memory = self.repository.store_memory(context, data.model_dump())

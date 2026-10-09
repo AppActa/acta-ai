@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.estado import consolidar_memoria
+from agents.helpers.errors import AuthorizationError, NotFoundError
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
@@ -15,6 +16,7 @@ from clients.memory_client import (
     encerrar_sessao,
     excluir_memoria,
     listar_chats,
+    listar_mensagens,
     listar_memorias,
     obter_consentimento,
 )
@@ -129,6 +131,23 @@ def nova_conversa(request: NovaSessaoRequest) -> dict[str, int | str | bool]:
 def consultar_chats(usuario_id: int, empresa_id: int, limit: int = 50) -> dict:
     with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
         return {"chats": listar_chats(limit=limit)}
+
+
+@app.get("/chats/{session_id}/mensagens")
+def consultar_mensagens(
+    session_id: str,
+    usuario_id: int,
+    empresa_id: int,
+    limit: int = Query(default=30, ge=1, le=100),
+) -> dict:
+    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+        try:
+            messages = listar_mensagens(session_id, limit=limit)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except AuthorizationError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"session_id": session_id, "mensagens": messages}
 
 
 @app.post("/chat")

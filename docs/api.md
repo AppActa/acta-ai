@@ -68,8 +68,18 @@ assistente são persistidas pelo fluxo da conversa.
 `GET /listar_chats?usuario_id=1&empresa_id=1&limit=50`
 
 Retorna somente conversas não vazias pertencentes ao usuário dentro da empresa. Cada
-item inclui o `session_id`, estado, contagem de mensagens e datas de atividade.
-O limite é aplicado pelo MCP, entre 1 e 100.
+item inclui `session_id`, `titulo`, estado, contagem de mensagens e datas de atividade.
+O título é derivado da primeira mensagem do usuário, limitado a 80 caracteres; sessões
+antigas sem título são preenchidas ao serem listadas. O limite é aplicado pelo MCP,
+entre 1 e 100.
+
+### Listar mensagens de uma conversa
+
+`GET /chats/{session_id}/mensagens?usuario_id=1&empresa_id=1&limit=30`
+
+Retorna as mensagens mais recentes da sessão em ordem cronológica. `limit` é opcional,
+usa 30 por padrão e aceita valores entre 1 e 100. A sessão precisa pertencer ao
+usuário e à empresa informados; uma sessão inexistente retorna 404.
 
 ### Áudio
 

@@ -60,6 +60,12 @@ def listar_chats(limit: int = 50) -> list[dict[str, Any]]:
     return get_memory_service().listar_chats(current_mcp_request_context(), limit=limit)
 
 
+def listar_mensagens(session_id: str, limit: int = 30) -> list[dict[str, Any]]:
+    return get_memory_service().listar_mensagens(
+        current_mcp_request_context(), session_id=session_id, limit=limit
+    )
+
+
 def atualizar_resumo(session_id: str, resumo: str, resumido_ate: str | datetime) -> None:
     marker = datetime.fromisoformat(resumido_ate) if isinstance(resumido_ate, str) else resumido_ate
     get_memory_service().atualizar_resumo(

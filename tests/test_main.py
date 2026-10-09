@@ -50,6 +50,54 @@ def test_new_conversation_keeps_previous_chat_open_when_summary_fails(monkeypatc
     assert calls == []
 
 
+def test_list_messages_endpoint_passes_identity_and_limit(monkeypatch) -> None:
+    contexts = []
+    calls = []
+
+    def fake_context(**kwargs):
+        contexts.append(kwargs)
+        return nullcontext()
+
+    monkeypatch.setattr(main, "mcp_request_context", fake_context)
+    monkeypatch.setattr(
+        main,
+        "listar_mensagens",
+        lambda session_id, limit: calls.append((session_id, limit))
+        or [{"role": "usuario", "content": "Oi"}, {"role": "assistente", "content": "Olá"}],
+    )
+
+    response = client.get(
+        "/chats/session-1/mensagens?usuario_id=3&empresa_id=4&limit=2"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": "session-1",
+        "mensagens": [
+            {"role": "usuario", "content": "Oi"},
+            {"role": "assistente", "content": "Olá"},
+        ],
+    }
+    assert calls == [("session-1", 2)]
+    assert contexts == [{"usuario_id": 3, "empresa_id": 4}]
+
+
+@pytest.mark.parametrize(
+    "error, expected_status", [(main.NotFoundError("Sessão não encontrada."), 404), (main.AuthorizationError("Sem acesso."), 403)]
+)
+def test_list_messages_endpoint_maps_session_errors(monkeypatch, error, expected_status) -> None:
+    monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
+    monkeypatch.setattr(
+        main,
+        "listar_mensagens",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+
+    response = client.get("/chats/session-1/mensagens?usuario_id=3&empresa_id=4")
+
+    assert response.status_code == expected_status
+
+
 def test_chat_requires_authenticated_identity() -> None:
     response = client.post(
         "/chat",

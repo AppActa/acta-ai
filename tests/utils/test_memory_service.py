@@ -22,6 +22,8 @@ class FakeMemoryRepository:
         ]
         self.chats = []
         self.last_list_limit = None
+        self.messages = []
+        self.last_message_limit = None
         self.semantic_queries = []
 
     def ensure_session(self, context, session_id, metadata=None):
@@ -45,6 +47,10 @@ class FakeMemoryRepository:
     def list_chats(self, context, limit):
         self.last_list_limit = limit
         return self.chats
+
+    def list_messages(self, context, session_id, limit):
+        self.last_message_limit = limit
+        return self.messages
 
     def update_summary(self, context, session_id, summary, summarized_until):
         self.summary = summary
@@ -203,6 +209,17 @@ def test_list_chats_clamps_limit_and_returns_repository_results() -> None:
 
     assert result == repository.chats
     assert repository.last_list_limit == 100
+
+
+def test_list_messages_clamps_limit_and_passes_session_id() -> None:
+    repository = FakeMemoryRepository()
+    repository.messages = [{"_id": "message-1", "content": "Olá"}]
+    service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
+
+    result = service.listar_mensagens(CONTEXT, session_id="session-1", limit=999)
+
+    assert result == repository.messages
+    assert repository.last_message_limit == 100
 
 
 def test_disabled_consent_stops_session_persistence_and_retrieval() -> None:

@@ -195,6 +195,40 @@ def test_message_stays_in_mongo_without_configured_qdrant() -> None:
     assert repository.messages.inserted[0]["indice_status"] == "pendente"
 
 
+def test_first_user_message_sets_session_title_from_sanitized_content() -> None:
+    repository = _repository(None)
+    repository.message_retention_days = 90
+    repository.ensure_session = lambda *_args, **_kwargs: {}  # type: ignore[method-assign]
+
+    repository.add_message(
+        CONTEXT,
+        session_id="session-1",
+        role="usuario",
+        content="  Minha   primeira pergunta sobre 123.456.789-00  ",
+        agent=None,
+        metadata={},
+    )
+
+    title_updates = [
+        (args[0], args[1])
+        for args, _kwargs in repository.sessions.updates
+        if args[1].get("$set", {}).get("titulo")
+    ]
+    assert title_updates
+    query, update = title_updates[-1]
+    assert query == {
+        "session_id": "session-1",
+        "usuario_id": 7,
+        "empresa_id": 3,
+        "$or": [
+            {"titulo": {"$exists": False}},
+            {"titulo": None},
+            {"titulo": ""},
+        ],
+    }
+    assert update["$set"]["titulo"] == "Minha primeira pergunta sobre [CPF OMITIDO]"
+
+
 def test_memory_is_kept_in_mongo_when_qdrant_indexing_fails() -> None:
     class FailingQdrant(FakeQdrant):
         def upsert(self, **_: object) -> None:
@@ -332,6 +366,57 @@ def test_session_context_and_summary_material_enforce_owner_and_order() -> None:
     assert summary_session["session_id"] == "session-1"
     assert material[0]["content"] == "Mensagem"
     assert repository.messages.find_calls[-1][0][0]["criada_em"]["$gt"]
+
+
+def test_list_messages_returns_latest_messages_in_chronological_order_and_checks_owner() -> None:
+    repository = _repository(None)
+    repository.sessions.find_one_result = {
+        "session_id": "session-1",
+        "usuario_id": 7,
+        "empresa_id": 3,
+    }
+    # Mongo returns newest first before the repository reverses the limited page.
+    repository.messages.documents = [
+        {"_id": "m3", "session_id": "session-1", "content": "terceira"},
+        {"_id": "m2", "session_id": "session-1", "content": "segunda"},
+        {"_id": "m1", "session_id": "session-1", "content": "primeira"},
+    ]
+
+    messages = repository.list_messages(CONTEXT, "session-1", limit=2)
+
+    assert [message["_id"] for message in messages] == ["m2", "m3"]
+    assert repository.messages.find_calls[0][0][0] == {
+        "session_id": "session-1",
+        "usuario_id": 7,
+        "empresa_id": 3,
+    }
+
+
+def test_list_chats_backfills_titles_for_existing_sessions() -> None:
+    repository = _repository(None)
+    repository.sessions.documents = [
+        {
+            "session_id": "legacy-session",
+            "usuario_id": 7,
+            "empresa_id": 3,
+            "total_mensagens": 2,
+        }
+    ]
+    repository.sessions.find_one_result = repository.sessions.documents[0]
+    repository.messages.documents = [
+        {
+            "session_id": "legacy-session",
+            "usuario_id": 7,
+            "empresa_id": 3,
+            "role": "usuario",
+            "content": "Primeira pergunta antiga",
+        }
+    ]
+
+    chats = repository.list_chats(CONTEXT, limit=10)
+
+    assert chats[0]["titulo"] == "Primeira pergunta antiga"
+    assert repository.sessions.updates[-1][0][1]["$set"]["titulo"] == "Primeira pergunta antiga"
 
 
 def test_existing_session_rejects_a_different_owner() -> None:
