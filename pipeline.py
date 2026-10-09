@@ -13,8 +13,10 @@ from agents.estado import (
     no_guardrail_saida,
     no_juiz,
     no_orquestrador,
-    _pergunta_abrangente as _pergunta_comparativa,
     no_roteador,
+)
+from agents.estado import (
+    _pergunta_abrangente as _pergunta_comparativa,
 )
 from agents.guardrail import anonimizar_entrada, guardrail_entrada
 from agents.skill_builder import gerar_markdown_skill
@@ -29,7 +31,6 @@ from clients.skill_client import (
     eh_pedido_criacao_skill,
     resolver_comando_skill,
 )
-from observability import observed_span
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,6 @@ def executar_fluxo_acta(
     pergunta_usuario: str,
     session_id: str,
     id_ciclo: int | list[int] | None = None,
-    empresa_id: int | None = None,
     ciclo_ativo: int | None = None,
 ) -> str:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
@@ -126,7 +126,6 @@ def executar_fluxo_acta(
 
     initial_state = {
         "messages": [{"role": "human", "content": question}],
-        "agentes_chamados": [],
         "rota": "",
         "especialistas": [],
         "respostas_especialistas": [],
@@ -137,20 +136,12 @@ def executar_fluxo_acta(
         "ciclo_ativo": ciclo_ativo,
         "contexto_memoria": "",
         "resposta_final": "",
-        "avaliacao_juiz": {},
-        "latencias_ms": {},
         "skill_ativa": active_skill,
     }
     query_scope = cycle_ids
     if ciclo_ativo is not None and not _pergunta_comparativa(question):
         query_scope = [ciclo_ativo]
-    with mcp_tool_cache_context(), mcp_cycle_scope_context(query_scope), observed_span(
-        "acta_ai.pipeline",
-        {
-            "acta.id_ciclo_present": bool(cycle_ids),
-            "acta.skill_active": active_skill is not None,
-        },
-    ):
+    with mcp_tool_cache_context(), mcp_cycle_scope_context(query_scope):
         final_state = fluxo_agentes.invoke(
             initial_state,
             config={
@@ -159,12 +150,6 @@ def executar_fluxo_acta(
                 }
             },
         )
-
-    logger.info(
-        "Pipeline ACTA concluída: session_id=%s latencias_ms=%s",
-        session_key,
-        final_state.get("latencias_ms", {}),
-    )
 
     answer = final_state.get("resposta_final", "").strip()
     if answer:
@@ -181,7 +166,6 @@ def get_response(
     message: str,
     session_id: str,
     id_ciclo: int | list[int] | None = None,
-    empresa_id: int | None = None,
     ciclo_ativo: int | None = None,
 ) -> str:
     """Mantém o contrato utilizado pela API FastAPI."""
@@ -191,5 +175,4 @@ def get_response(
         session_id,
         id_ciclo=id_ciclo,
         ciclo_ativo=ciclo_ativo,
-        empresa_id=empresa_id,
     )

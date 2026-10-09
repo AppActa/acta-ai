@@ -97,7 +97,6 @@ def test_chat_normalizes_cycles_and_delegates_active_cycle(monkeypatch) -> None:
                 "session_id": "sessao-2",
                 "id_ciclo": [8, 4],
                 "ciclo_ativo": 4,
-                "empresa_id": 4,
             },
         ),
     ]

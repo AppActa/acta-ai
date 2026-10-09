@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import HumanMessage
@@ -13,7 +14,6 @@ from clients.mcp_acta_client import mcp_request_context
 def _state(*specialists: str) -> dict:
     return {
         "messages": [HumanMessage(content="Pergunta de teste")],
-        "agentes_chamados": [],
         "rota": "especialistas",
         "especialistas": list(specialists),
         "respostas_especialistas": [],
@@ -46,10 +46,9 @@ def test_specialists_run_in_parallel_and_keep_mcp_context(monkeypatch) -> None:
         empresa_id=9,
         trace_id="trace-paralelo",
     ):
-        responses, called = state_module.executar_especialistas(_state("primeiro", "segundo"))
+        responses = state_module.executar_especialistas(_state("primeiro", "segundo"))
 
-    assert called == ["primeiro", "segundo"]
-    assert [item["especialista"] for item in responses] == called
+    assert [item["especialista"] for item in responses] == ["primeiro", "segundo"]
     assert {item["resposta"] for item in responses} == {"7:9:trace-paralelo"}
 
 
@@ -70,9 +69,9 @@ def test_specialist_answer_is_not_replaced_by_graph_tool_fallback(
         lambda name, args: calls.append((name, args)) or {"status": "ok"},
     )
 
-    responses, called = state_module.executar_especialistas(_state(specialist))
+    responses = state_module.executar_especialistas(_state(specialist))
 
-    assert called == [specialist]
+    assert [item["especialista"] for item in responses] == [specialist]
     assert responses[0]["resposta"] == "Resposta produzida pelo especialista."
     assert responses[0]["evidencias"] == []
     assert calls == []
@@ -87,11 +86,11 @@ def test_mcp_cache_is_limited_to_request_context(monkeypatch) -> None:
 
     monkeypatch.setattr(mcp_client, "_run_async_in_sync_context", fake_call)
 
-    with mcp_request_context(usuario_id=1, empresa_id=1):
+    with mcp_request_context(usuario_id=1, empresa_id=1), mcp_client.mcp_tool_cache_context():
         first = mcp_client.call_acta_tool("tool_teste", {"b": 2, "a": 1})
         second = mcp_client.call_acta_tool("tool_teste", {"a": 1, "b": 2})
 
-    with mcp_request_context(usuario_id=1, empresa_id=1):
+    with mcp_request_context(usuario_id=1, empresa_id=1), mcp_client.mcp_tool_cache_context():
         third = mcp_client.call_acta_tool("tool_teste", {"a": 1, "b": 2})
 
     assert first == second == {"status": "ok", "numero": 1}
@@ -112,6 +111,7 @@ def test_mcp_records_real_and_cached_tool_evidence(monkeypatch) -> None:
 
     with (
         mcp_request_context(usuario_id=1, empresa_id=1),
+        mcp_client.mcp_tool_cache_context(),
         mcp_client.mcp_tool_evidence_context() as evidence,
     ):
         mcp_client.call_acta_tool("tool_teste", {"id_ciclo": 1})
@@ -162,13 +162,23 @@ def test_mcp_does_not_retry_non_transient_failures(monkeypatch) -> None:
     assert calls == 1
 
 
-def test_output_guardrail_skips_optional_llm_review(monkeypatch) -> None:
-    class UnexpectedLLM:
-        def invoke(self, _prompt: str):
-            raise AssertionError("A LLM de saída não deveria ser chamada")
+def test_output_guardrail_redacts_content_before_jev_review(monkeypatch) -> None:
+    states = []
 
-    monkeypatch.setattr(guardrail_module, "LLM_OUTPUT_REVIEW", False)
-    monkeypatch.setattr(guardrail_module, "llm", UnexpectedLLM())
+    class JevClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def system_one(self, *, state, questions):
+            states.append(state)
+            return SimpleNamespace(
+                choices={"categoria": SimpleNamespace(choice="APROVADO")}
+            )
+
+    monkeypatch.setattr(guardrail_module, "TypeSafeClient", lambda **_kwargs: JevClient())
 
     result = guardrail_module.guardrail_saida(
         "Contato: gestor@acta.com",
@@ -176,3 +186,4 @@ def test_output_guardrail_skips_optional_llm_review(monkeypatch) -> None:
     )
 
     assert result["mensagem"] == "Contato: [EMAIL OMITIDO]"
+    assert "gestor@acta.com" not in str(states)

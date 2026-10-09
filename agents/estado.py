@@ -2,15 +2,13 @@
 
 import json
 import logging
-import operator
 import re
 import unicodedata
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 from functools import partial
-from time import perf_counter
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, RemoveMessage, SystemMessage
 from langgraph.graph import MessagesState
@@ -23,29 +21,24 @@ from agents.agents import (
     indicadores_agent,
     licoes_agent,
     orquestrador,
-    predicoes_agent,
     relatorios_agent,
     responder_faq,
     tarefas_agent,
 )
 from agents.guardrail import anonimizar_entrada, guardrail_entrada, guardrail_saida
-from agents.helpers.llms import llm_fast
+from agents.helpers.llms import llm
 from agents.juiz import avaliar_resposta
 from agents.prompts.prompt_memory_mongo import _PROMPT_CONSOLIDAR_MEMORIA_ACTA
 from clients.mcp_acta_client import call_acta_tool, mcp_tool_evidence_context
 from config import JEV_API_KEY
-from observability import observed_span, record_pipeline_stage
 from tools.licoes_tools import licoes_context
 
 logger = logging.getLogger(__name__)
 
 
-
-
 class Estado(MessagesState):
     """Dados compartilhados por todos os nós de uma execução."""
 
-    agentes_chamados: Annotated[list[str], operator.add]
     rota: str
     especialistas: list[str]
     escopo_ciclos: Literal["ativo", "todos", "comparacao"]
@@ -57,20 +50,7 @@ class Estado(MessagesState):
     ciclo_ativo: int | None
     contexto_memoria: str
     resposta_final: str
-    avaliacao_juiz: dict[str, Any]
-    latencias_ms: dict[str, float]
     skill_ativa: dict[str, Any] | None
-
-
-def _latencias(estado: Estado, etapa: str, inicio: float) -> dict[str, float]:
-    """Acrescenta a duração de uma etapa sem apagar medições anteriores."""
-
-    duration_ms = round((perf_counter() - inicio) * 1000, 2)
-    record_pipeline_stage(etapa, duration_ms)
-    return {
-        **estado.get("latencias_ms", {}),
-        etapa: duration_ms,
-    }
 
 
 def _texto_mensagem(message: BaseMessage) -> str:
@@ -84,9 +64,30 @@ def _ultima_mensagem(estado: Estado, message_type: str) -> BaseMessage | None:
     return None
 
 
+def _normalizar_texto(question: str) -> str:
+    normalized = unicodedata.normalize("NFKD", question.casefold())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _contexto_recente_para_roteador(estado: Estado, mensagem_atual: BaseMessage) -> str:
+    """Retorna até quatro mensagens anteriores para resolver referências na conversa."""
+
+    previous_messages = [
+        message
+        for message in estado["messages"]
+        if message is not mensagem_atual and message.type in {"human", "ai"}
+    ][-4:]
+    lines = [
+        f"{'Usuário' if message.type == 'human' else 'ACTA'}: {_texto_mensagem(message)}"
+        for message in previous_messages
+        if _texto_mensagem(message)
+    ]
+    lines.append(f"Usuário: {_texto_mensagem(mensagem_atual)}")
+    return "\n".join(lines)
+
+
 def _pergunta_abrangente(question: str) -> bool:
-    normalized = unicodedata.normalize("NFKD", question.lower())
-    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = _normalizar_texto(question)
     words = set(re.findall(r"\w+", normalized))
     comparative_terms = {
         "compara",
@@ -199,7 +200,7 @@ def consolidar_memoria(session_id: str, *, forcar: bool = False) -> bool:
             resumo_anterior=material.get("resumo_anterior") or "(sem resumo anterior)",
             conversa=material.get("conversa_formatada") or "",
         )
-        response = llm_fast.invoke(prompt)
+        response = llm.invoke(prompt)
         cleaned = _texto_mensagem(response)
         if cleaned.startswith("```"):
             cleaned = re.sub(
@@ -285,8 +286,7 @@ def _executar_licoes(estado: Estado) -> str:
     id_ciclo = cycle_ids[0]
     user_message = _ultima_mensagem(estado, "human")
     question = _texto_mensagem(user_message).strip() if user_message else ""
-    normalized = unicodedata.normalize("NFKD", question.lower())
-    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = _normalizar_texto(question)
     if any(marker in normalized for marker in ("crie uma licao", "criar uma licao", "registre uma licao", "gere uma licao")):
         with licoes_context(id_ciclo=id_ciclo):
             return _executar_agente(licoes_agent, estado, "Crie uma lição aprendida para o ciclo ativo.")
@@ -311,9 +311,6 @@ def _executar_licoes(estado: Estado) -> str:
         if result.get("status") == "sem_licoes":
             return "Ainda não há lições aprendidas registradas para este ciclo."
         text = str(result.get("resposta") or result.get("resumo") or "").strip()
-        references = result.get("referencias")
-        if text and references:
-            text += "\n\nReferências: " + ", ".join(f"lição {item}" for item in references)
         if text:
             return text
     return "Não foi possível consultar as lições aprendidas deste ciclo no momento."
@@ -357,7 +354,7 @@ REGISTRO_ESPECIALISTAS: dict[str, Callable[[Estado], str]] = {
         indicadores_agent,
         instruction=(
             "Responda somente sobre metas, indicadores, base, alvo, atingimento, riscos "
-            "e limitações de medição. Não trate previsão como resultado observado."
+            "e limitações de medição. Não trate status como medição realizada."
         ),
     ),
     "relatorios": partial(
@@ -369,19 +366,64 @@ REGISTRO_ESPECIALISTAS: dict[str, Callable[[Estado], str]] = {
             "correspondente confirmar sucesso."
         ),
     ),
-    "predicoes": partial(
-        _executar_agente,
-        predicoes_agent,
-        instruction=(
-            "Responda somente sobre a previsão solicitada. Explicite dados insuficientes, "
-            "incerteza e métricas; não converta probabilidade em certeza."
-        ),
+}
+
+DESCRICOES_ESPECIALISTAS: dict[str, str] = {
+    "rag": (
+        "Dúvidas conceituais e explicações que não exigem consultar dados de um ciclo: "
+        "o que é o ACTA, como funciona um processo ou recurso e conhecimento documentado. "
+        "Exemplos: 'O que é o ACTA?', 'Quais são as etapas do PDCA?', "
+        "'Qual etapa do PDCA vem primeiro?' e 'Como funciona a área de tarefas?'. "
+        "Perguntas conceituais sobre PDCA pertencem a rag mesmo sem mencionar ACTA."
+    ),
+    "ciclo": (
+        "Somente consultar dados reais registrados para um ciclo específico do ACTA: "
+        "fase, status, riscos ou andamento. Não deve ser escolhido para explicar o método "
+        "PDCA, suas etapas ou conceitos gerais. Exemplos: 'Como está o ciclo 12?', "
+        "'Qual a fase atual do ciclo 12?'"
+    ),
+    "licoes": (
+        "Consultar, resumir, comparar ou registrar lições aprendidas de ciclos. "
+        "Não deve ser escolhido para perguntas conceituais sobre PDCA ou referências à "
+        "lista de etapas; escolha somente quando a pessoa pedir lições aprendidas ou "
+        "registradas nos ciclos do ACTA. Exemplos: 'O que aprendemos no ciclo 1?', "
+        "'Quais lições foram registradas?'"
+    ),
+    "tarefas": (
+        "Consultar ou acompanhar tarefas registradas: responsáveis, prazos, atrasos, "
+        "dependências ou justificativas. Exemplos: 'Quais tarefas estão atrasadas?'"
+    ),
+    "colaboradores": (
+        "Consultar colaboradores, competências, disponibilidade, carga ou realocação. "
+        "Exemplos: 'Quem está disponível?', 'Como está a carga da equipe?'"
+    ),
+    "formularios": (
+        "Consultar formulários respondidos, respostas, padrões ou ocorrências registradas. "
+        "Exemplos: 'Quais ocorrências apareceram nas respostas?'"
+    ),
+    "indicadores": (
+        "Consultar metas, indicadores, valores base ou alvo, atingimento e limitações "
+        "de medição. Exemplos: 'Qual o atingimento da meta?'"
+    ),
+    "relatorios": (
+        "Preparar contexto, resumo ou relatório usando dados registrados do ACTA. "
+        "Exemplos: 'Gere um resumo do ciclo'"
     ),
 }
+CICLO_ESPECIALISTAS = frozenset(
+    {
+        "ciclo",
+        "licoes",
+        "tarefas",
+        "colaboradores",
+        "formularios",
+        "indicadores",
+        "relatorios",
+    }
+)
 
 
 def no_guardrail_entrada(estado: Estado) -> dict:
-    inicio = perf_counter()
     user_message = _ultima_mensagem(estado, "human")
     if user_message is None:
         message = "Não recebi uma mensagem válida para processar."
@@ -389,8 +431,6 @@ def no_guardrail_entrada(estado: Estado) -> dict:
             "rota": "fim",
             "resposta_final": message,
             "messages": [{"role": "assistant", "content": message}],
-            "agentes_chamados": ["guardrail_entrada"],
-            "latencias_ms": _latencias(estado, "guardrail_entrada", inicio),
         }
 
     session_id = estado["session_id"]
@@ -421,8 +461,6 @@ def no_guardrail_entrada(estado: Estado) -> dict:
                 RemoveMessage(id=user_message.id),
                 {"role": "assistant", "content": blocked_message},
             ],
-            "agentes_chamados": ["guardrail_entrada"],
-            "latencias_ms": _latencias(estado, "guardrail_entrada", inicio),
         }
 
     _salvar_mensagem(
@@ -440,40 +478,31 @@ def no_guardrail_entrada(estado: Estado) -> dict:
             RemoveMessage(id=user_message.id),
             {"role": "human", "content": question},
         ],
-        "agentes_chamados": ["guardrail_entrada"],
-        "latencias_ms": _latencias(estado, "guardrail_entrada", inicio),
     }
 
 
 def no_roteador(estado: Estado) -> dict:
-    inicio = perf_counter()
     user_message = _ultima_mensagem(estado, "human")
     if user_message is None:
         return {
-            "agentes_chamados": ["jev"],
             "rota": "fim",
-            "latencias_ms": _latencias(estado, "jev", inicio),
         }
 
     question = _texto_mensagem(user_message).strip()
-    specialist_descriptions = {
-        "rag": "Dúvidas conceituais sobre o ACTA, seus recursos, processos e conhecimento documentado.",
-        "ciclo": "Visão geral, fase, status, riscos ou dados gerais de um ciclo PDCA.",
-        "licoes": "Consultar, resumir, comparar ou criar lições aprendidas de ciclos.",
-        "tarefas": "Consultar tarefas, prazos, atrasos, dependências ou justificativas.",
-        "colaboradores": "Consultar colaboradores, competências, disponibilidade, carga ou realocação.",
-        "formularios": "Consultar formulários, respostas, padrões ou ocorrências registradas.",
-        "indicadores": "Consultar metas, indicadores, valores base/alvo ou atingimento.",
-        "relatorios": "Preparar contexto, resumo ou relatório a partir de dados do ACTA.",
-        "predicoes": "Analisar previsões, probabilidade de atraso, risco ou anomalias.",
-    }
+    conversation_context = _contexto_recente_para_roteador(estado, user_message)
     try:
         with TypeSafeClient(api_key=JEV_API_KEY) as client:
             routing = client.system_one(
-                state={"mensagem_usuario": question},
+                state={
+                    "mensagem_usuario": question,
+                    "contexto_conversa": conversation_context,
+                },
                 questions={
                     "tipo_mensagem": Choice(
-                        instructions="Qual é o tipo geral da solicitação do usuário?",
+                        instructions=(
+                            "Classifique a mensagem atual considerando o contexto recente, "
+                            "quando houver. Mensagens de continuação herdam o assunto anterior."
+                        ),
                         criteria={
                             "conversa": (
                                 "Somente saudação, agradecimento ou conversa casual, sem "
@@ -484,7 +513,10 @@ def no_roteador(estado: Estado) -> dict:
                         },
                     ),
                     "escopo_ciclos": Choice(
-                        instructions="Qual escopo de ciclos é necessário para responder?",
+                        instructions=(
+                            "Determine o escopo de ciclos necessário considerando também "
+                            "o contexto recente da conversa."
+                        ),
                         criteria={
                             "ativo": "Consulta referente a um único ciclo ativo ou pedido singular.",
                             "todos": "Consulta que precisa considerar todos os ciclos disponíveis.",
@@ -494,11 +526,14 @@ def no_roteador(estado: Estado) -> dict:
                     **{
                         name: Noul(
                             instructions=(
-                                "Um especialista deste domínio é necessário para responder "
-                                f"corretamente à solicitação? Domínio: {description}"
+                                "A mensagem atual, considerando o contexto recente, deve ser "
+                                "encaminhada a este especialista? Marque como relevante quando "
+                                "o pedido estiver dentro do domínio, mesmo se for uma pergunta "
+                                "curta de continuação. Não exija que o usuário mencione ACTA "
+                                f"explicitamente. Domínio e exemplos: {description}"
                             ),
                         )
-                        for name, description in specialist_descriptions.items()
+                        for name, description in DESCRICOES_ESPECIALISTAS.items()
                     },
                 },
             )
@@ -513,10 +548,8 @@ def no_roteador(estado: Estado) -> dict:
                 )
                 return {
                     "messages": [{"role": "assistant", "content": answer}],
-                    "agentes_chamados": ["jev"],
                     "rota": "fim",
                     "resposta_final": answer,
-                    "latencias_ms": _latencias(estado, "jev", inicio),
                 }
 
     except Exception:  # noqa: BLE001 - a triagem falha de forma segura
@@ -524,18 +557,27 @@ def no_roteador(estado: Estado) -> dict:
         message = "Não consegui analisar sua mensagem agora. Tente novamente em instantes."
         return {
             "messages": [{"role": "assistant", "content": message}],
-            "agentes_chamados": ["jev"],
             "rota": "fim",
             "resposta_final": message,
-            "latencias_ms": _latencias(estado, "jev", inicio),
         }
 
     # Os Noul retornam probabilidades; 0.5 separa especialistas relevantes dos demais.
     selected = [
         name
-        for name in specialist_descriptions
+        for name in DESCRICOES_ESPECIALISTAS
         if routing.nouls[name].noul >= 0.5
     ]
+    scores = {
+        name: float(routing.nouls[name].noul)
+        for name in DESCRICOES_ESPECIALISTAS
+    }
+    logger.warning(
+        "Roteamento JEV: tipo=%s escopo=%s notas={%s} selecionados=%s",
+        message_type,
+        routing.choices["escopo_ciclos"].choice,
+        ", ".join(f"{name}={score:.2f}" for name, score in scores.items()),
+        selected,
+    )
     if not selected:
         message = (
             "Posso ajudar com dúvidas e informações sobre o ACTA. Qual tema gostaria de consultar?"
@@ -544,70 +586,52 @@ def no_roteador(estado: Estado) -> dict:
         )
         return {
             "messages": [{"role": "assistant", "content": message}],
-            "agentes_chamados": ["jev"],
             "rota": "fim",
             "resposta_final": message,
-            "latencias_ms": _latencias(estado, "jev", inicio),
         }
 
-    cycle_specialists = {"ciclo", "licoes", "tarefas", "colaboradores", "formularios", "indicadores", "relatorios", "predicoes"}
     cycle_ids = _ids_ciclo_estado(estado)
-    if cycle_specialists.intersection(selected) and not cycle_ids:
+    if CICLO_ESPECIALISTAS.intersection(selected) and not cycle_ids:
         return {
-            "agentes_chamados": ["jev"],
             "rota": "fim",
             "resposta_final": "Informe o ciclo que devo consultar para responder sobre dados do ACTA.",
-            "latencias_ms": _latencias(estado, "jev", inicio),
         }
     if (
         len(cycle_ids) > 1
         and estado.get("ciclo_ativo") is None
-        and cycle_specialists.intersection(selected)
+        and CICLO_ESPECIALISTAS.intersection(selected)
         and routing.choices["escopo_ciclos"].choice == "ativo"
     ):
         return {
-            "agentes_chamados": ["jev"],
             "rota": "fim",
             "resposta_final": "Qual ciclo devo consultar? Se quiser uma resposta comparativa, peça para comparar os ciclos.",
-            "latencias_ms": _latencias(estado, "jev", inicio),
         }
 
     return {
-        "agentes_chamados": ["jev"],
         "rota": "especialistas",
         "especialistas": selected,
         "escopo_ciclos": routing.choices["escopo_ciclos"].choice,
-        "latencias_ms": _latencias(estado, "jev", inicio),
     }
 
 
-def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[str]]:
+def executar_especialistas(estado: Estado) -> list[dict[str, Any]]:
     """Executa os especialistas escolhidos; esta função não é um nó do grafo."""
 
     selected = [name for name in estado.get("especialistas", []) if name in REGISTRO_ESPECIALISTAS]
     if not selected:
-        return [], []
+        return []
 
     def run(name: str) -> dict[str, Any]:
-        inicio = perf_counter()
-        with mcp_tool_evidence_context() as evidence, observed_span(
-            "acta_ai.specialist",
-            {"acta.specialist": name},
-        ):
+        with mcp_tool_evidence_context() as evidence:
             try:
                 answer = REGISTRO_ESPECIALISTAS[name](estado)
             except Exception:  # noqa: BLE001 - um especialista não impede os demais
                 logger.exception("Falha ao executar o especialista %s", name)
                 answer = "Não foi possível consultar este domínio no momento."
-        logger.info(
-            "Especialista %s concluído em %.2f ms",
-            name,
-            (perf_counter() - inicio) * 1000,
-        )
         return {"especialista": name, "resposta": answer, "evidencias": list(evidence)}
 
     if len(selected) == 1:
-        return [run(selected[0])], selected
+        return [run(selected[0])]
 
     # Cada thread recebe uma cópia do contexto atual. Isso preserva os headers
     # autenticados do MCP e permite que os especialistas rodem simultaneamente.
@@ -622,12 +646,11 @@ def executar_especialistas(estado: Estado) -> tuple[list[dict[str, Any]], list[s
             by_name[name] = future.result()
 
     # Mantém a ordem escolhida pelo roteador, independentemente de qual terminou primeiro.
-    return [by_name[name] for name in selected], selected
+    return [by_name[name] for name in selected]
 
 
 def no_orquestrador(estado: Estado) -> dict:
-    inicio = perf_counter()
-    responses, called = executar_especialistas(estado)
+    responses = executar_especialistas(estado)
     tool_evidence = [
         evidence
         for response in responses
@@ -671,18 +694,12 @@ def no_orquestrador(estado: Estado) -> dict:
         "messages": [{"role": "assistant", "content": answer}],
         "respostas_especialistas": responses,
         "evidencias_tools": tool_evidence,
-        "agentes_chamados": [
-            *called,
-            *(["orquestrador"] if len(responses) > 1 or active_skill else []),
-        ],
-        "latencias_ms": _latencias(estado, "orquestrador", inicio),
     }
 
 
 def no_juiz(estado: Estado) -> dict:
     """Valida a resposta consolidada contra as evidências dos especialistas."""
 
-    inicio = perf_counter()
     user_message = _ultima_mensagem(estado, "human")
     assistant_message = _ultima_mensagem(estado, "ai")
     question = _texto_mensagem(user_message).strip() if user_message else ""
@@ -701,14 +718,10 @@ def no_juiz(estado: Estado) -> dict:
     messages.append({"role": "assistant", "content": judged_answer})
     return {
         "messages": messages,
-        "avaliacao_juiz": evaluation,
-        "agentes_chamados": ["juiz"],
-        "latencias_ms": _latencias(estado, "juiz", inicio),
     }
 
 
 def no_guardrail_saida(estado: Estado) -> dict:
-    inicio = perf_counter()
     assistant_message = _ultima_mensagem(estado, "ai")
     raw_answer = _texto_mensagem(assistant_message).strip() if assistant_message else ""
     result = guardrail_saida(raw_answer, estado.get("mapa_pii", {}))
@@ -730,8 +743,6 @@ def no_guardrail_saida(estado: Estado) -> dict:
     return {
         "messages": messages,
         "resposta_final": final_answer,
-        "agentes_chamados": ["guardrail_saida"],
-        "latencias_ms": _latencias(estado, "guardrail_saida", inicio),
     }
 
 

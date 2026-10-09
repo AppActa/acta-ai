@@ -1,15 +1,14 @@
-from uuid import uuid4
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 
 import agents.estado as state_module
 import pipeline as pipeline_module
 from pipeline import fluxo_agentes, get_response
 from tools.ciclo_tools import ciclo_visao_geral
 from tools.formulario_tools import formularios_resumo_respostas
-from tools.predicao_tools import predicoes_risco_atraso_ciclo
 from tools.relatorio_tools import relatorios_contexto_ciclo
 
 
@@ -275,7 +274,6 @@ def test_specialists_are_functions_not_graph_nodes() -> None:
             "formularios",
             "indicadores",
             "relatorios",
-            "predicoes",
             "especialistas",
         }
     )
@@ -429,21 +427,6 @@ def test_report_tool_forwards_to_mcp_client(monkeypatch) -> None:
     assert calls == [("relatorios_contexto_ciclo", {"id_ciclo": 3, "limit": 50})]
 
 
-def test_prediction_tool_forwards_to_mcp_client(monkeypatch) -> None:
-    calls = []
-
-    def fake_call(name: str, **arguments):
-        calls.append((name, arguments))
-        return {"status": "ok", "previsao_disponivel": False}
-
-    monkeypatch.setattr("tools.predicao_tools.call_mcp_tool", fake_call)
-
-    response = predicoes_risco_atraso_ciclo.invoke({"id_ciclo": 3})
-
-    assert response["previsao_disponivel"] is False
-    assert calls == [("predicoes_risco_atraso_ciclo", {"id_ciclo": 3})]
-
-
 def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     specialist = FakeAgent("Fatos originais do ciclo")
@@ -583,10 +566,9 @@ def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch)
         "Resuma as lições aprendidas do ciclo.",
         f"teste::{uuid4()}",
         id_ciclo=[7],
-        empresa_id=4,
     )
 
-    assert response == "Resumo das lições.\n\nReferências: lição 2"
+    assert response == "Resumo das lições."
     assert tool_calls == [("licoes_resumir", {"id_ciclo": 7})]
     assert len(jev.calls) == 1
     assert not hasattr(pipeline_module, "enviar_pedido_licao")

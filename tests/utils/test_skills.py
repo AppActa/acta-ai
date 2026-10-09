@@ -111,8 +111,8 @@ def test_service_is_user_scoped_and_revalidates_on_read(write_context) -> None:
     service = SkillsService(repository)
     created = service.criar(write_context, conteudo_markdown=SAFE_SKILL)
 
-    assert created["skill"]["comando"] == "/resumo-executivo"
-    assert service.obter(write_context, nome="/resumo-executivo")["status"] == "ok"
+    assert created["comando"] == "/resumo-executivo"
+    assert service.obter(write_context, nome="/resumo-executivo")["slug"] == "resumo-executivo"
 
     other_user = RequestContext(
         usuario_id=8,
@@ -121,14 +121,14 @@ def test_service_is_user_scoped_and_revalidates_on_read(write_context) -> None:
     )
     with pytest.raises(NotFoundError):
         service.obter(other_user, nome="resumo-executivo")
-    assert service.listar(other_user)["skills"] == []
+    assert service.listar(other_user) == []
     with pytest.raises(NotFoundError):
         service.excluir(other_user, nome="resumo-executivo")
 
     other_created = service.criar(other_user, conteudo_markdown=SAFE_SKILL)
-    assert other_created["skill"]["id"] != created["skill"]["id"]
-    assert service.listar(write_context)["count"] == 1
-    assert service.listar(other_user)["count"] == 1
+    assert other_created["id"] != created["id"]
+    assert len(service.listar(write_context)) == 1
+    assert len(service.listar(other_user)) == 1
 
     stored = repository.documents[(3, 7, "resumo-executivo")]
     stored["markdown"] = SAFE_SKILL.replace(
@@ -148,4 +148,4 @@ def test_skill_creation_is_available_at_read_level(write_context) -> None:
 
     created = service.criar(read_only, conteudo_markdown=SAFE_SKILL)
 
-    assert created["status"] == "ok"
+    assert created["slug"] == "resumo-executivo"

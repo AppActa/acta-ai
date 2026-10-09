@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from groq import Groq
+from openai import OpenAI
 
-from config import GROQ_API_KEY
+from config import ACTA_OPENAI_TRANSCRIPTION_MODEL, OPENAI_API_KEY
 
-MODEL = "whisper-large-v3-turbo"
+MODEL = ACTA_OPENAI_TRANSCRIPTION_MODEL
 
-client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 
 def transcrever_audio(
@@ -18,7 +18,7 @@ def transcrever_audio(
     language: str = "pt",
 ) -> str:
     if client is None:
-        raise RuntimeError("GROQ_API_KEY não foi configurada.")
+        raise RuntimeError("OPENAI_API_KEY não foi configurada.")
 
     resultado = client.audio.transcriptions.create(
         file=(filename, BytesIO(audio)),

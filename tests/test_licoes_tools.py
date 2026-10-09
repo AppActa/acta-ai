@@ -76,3 +76,62 @@ def test_jev_routes_lesson_question_to_lessons_specialist(monkeypatch) -> None:
 
     assert result["rota"] == "especialistas"
     assert result["especialistas"] == ["licoes"]
+
+
+def test_jev_router_receives_recent_context_and_logs_scores(monkeypatch, caplog) -> None:
+    import logging
+
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from agents import estado
+
+    calls = []
+
+    class FakeJevClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def system_one(self, *, state, questions):
+            calls.append((state, questions))
+            return SimpleNamespace(
+                choices={
+                    "tipo_mensagem": SimpleNamespace(choice="negocio"),
+                    "escopo_ciclos": SimpleNamespace(choice="ativo"),
+                },
+                nouls={
+                    name: SimpleNamespace(noul=0.9 if name == "rag" else 0.1)
+                    for name in questions
+                    if name not in {"tipo_mensagem", "escopo_ciclos"}
+                },
+            )
+
+    monkeypatch.setattr(estado, "TypeSafeClient", lambda **_kwargs: FakeJevClient())
+    with caplog.at_level(logging.INFO, logger="agents.estado"):
+        result = no_roteador(
+            {
+                "messages": [
+                    HumanMessage(content="Quais são as etapas do PDCA?"),
+                    AIMessage(content="O PDCA tem quatro etapas: Planejar, Fazer, Checar e Agir."),
+                    HumanMessage(content="E qual delas vem primeiro?"),
+                ],
+                "session_id": "sessao-teste",
+                "id_ciclo": [],
+                "latencias_ms": {},
+            }
+        )
+
+    routed_state, routed_questions = calls[0]
+    assert "Quais são as etapas do PDCA?" in routed_state["contexto_conversa"]
+    assert "E qual delas vem primeiro?" in routed_state["contexto_conversa"]
+    assert "exemplos" in routed_questions["rag"].instructions.casefold()
+    assert "etapas do pdca" in routed_questions["rag"].instructions.casefold()
+    assert "não deve ser escolhido para explicar" in routed_questions["ciclo"].instructions.casefold()
+    assert "não deve ser escolhido para perguntas conceituais sobre pdca" in (
+        routed_questions["licoes"].instructions.casefold()
+    )
+    assert "Roteamento JEV" in caplog.text
+    assert "rag=0.90" in caplog.text
+    assert result["rota"] == "especialistas"

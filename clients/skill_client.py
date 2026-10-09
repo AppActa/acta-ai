@@ -34,44 +34,31 @@ def eh_pedido_criacao_skill(message: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in patterns)
 
 
-def _expect_ok(result: dict | str) -> dict[str, Any]:
-    if not isinstance(result, dict):
-        raise SkillClientError("O servidor de skills retornou uma resposta inválida.")
-    if result.get("status") != "ok":
-        message = str(result.get("message") or "Não foi possível processar a skill.")
-        raise SkillClientError(message)
-    return result
-
-
 def criar_skill(conteudo_markdown: str) -> dict[str, Any]:
     try:
-        result = get_skills_service().criar(
+        return get_skills_service().criar(
             current_mcp_request_context(), conteudo_markdown=conteudo_markdown
         )
     except (LookupError, ValueError) as exc:
         raise SkillClientError(str(exc)) from exc
-    return _expect_ok(result)["skill"]
 
 
 def listar_skills(limit: int = 50) -> list[dict[str, Any]]:
-    result = get_skills_service().listar(current_mcp_request_context(), limit=limit)
-    return _expect_ok(result)["skills"]
+    return get_skills_service().listar(current_mcp_request_context(), limit=limit)
 
 
 def obter_skill(nome: str) -> dict[str, Any]:
     try:
-        result = get_skills_service().obter(current_mcp_request_context(), nome=nome)
+        return get_skills_service().obter(current_mcp_request_context(), nome=nome)
     except (LookupError, ValueError) as exc:
         raise SkillClientError(str(exc)) from exc
-    return _expect_ok(result)["skill"]
 
 
 def excluir_skill(nome: str) -> dict[str, Any]:
     try:
-        result = get_skills_service().excluir(current_mcp_request_context(), nome=nome)
+        return get_skills_service().excluir(current_mcp_request_context(), nome=nome)
     except (LookupError, ValueError) as exc:
         raise SkillClientError(str(exc)) from exc
-    return _expect_ok(result)
 
 
 def resolver_comando_skill(message: str) -> tuple[str, dict[str, Any] | None]:

@@ -1,9 +1,9 @@
 from typing import Any
 
-from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from agents.helpers.errors import NotFoundError
 from agents.helpers.skills.compiler import normalize_skill_command, parse_skill_markdown
 from agents.helpers.skills.repository import SkillsRepository
+from clients.mcp_acta_client import MCPRequestContext as RequestContext
 
 
 class SkillsService:
@@ -30,7 +30,7 @@ class SkillsService:
     def criar(self, context: RequestContext, *, conteudo_markdown: str) -> dict[str, Any]:
         definition = parse_skill_markdown(conteudo_markdown)
         stored = self.repository.upsert(context, definition)
-        return {"status": "ok", "skill": self._safe_output(stored)}
+        return self._safe_output(stored)
 
     def obter(self, context: RequestContext, *, nome: str) -> dict[str, Any]:
         slug = normalize_skill_command(nome)
@@ -43,9 +43,9 @@ class SkillsService:
         if definition.slug != slug:
             raise ValueError("A skill armazenada falhou na validação de integridade.")
         validated = {**document, **definition.model_dump()}
-        return {"status": "ok", "skill": self._safe_output(validated)}
+        return self._safe_output(validated)
 
-    def listar(self, context: RequestContext, *, limit: int = 50) -> dict[str, Any]:
+    def listar(self, context: RequestContext, *, limit: int = 50) -> list[dict[str, Any]]:
         documents = self.repository.list(context, min(max(limit, 1), 100))
         skills = [
             {
@@ -56,10 +56,10 @@ class SkillsService:
             }
             for item in documents
         ]
-        return {"status": "ok", "count": len(skills), "skills": skills}
+        return skills
 
     def excluir(self, context: RequestContext, *, nome: str) -> dict[str, Any]:
         slug = normalize_skill_command(nome)
         if not self.repository.delete(context, slug):
             raise NotFoundError(f"A skill /{slug} não foi encontrada.")
-        return {"status": "ok", "comando": f"/{slug}", "excluida": True}
+        return {"comando": f"/{slug}", "excluida": True}

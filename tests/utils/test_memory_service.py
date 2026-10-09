@@ -8,6 +8,7 @@ from agents.helpers.memory.service import MemoryService
 
 class FakeMemoryRepository:
     def __init__(self) -> None:
+        self.qdrant = None
         self.consent = {"modo": "somente_explicitas", "retencao_dias": None}
         self.memories = []
         self.summary = ""
@@ -84,6 +85,7 @@ CONTEXT = RequestContext(
 
 def test_context_combines_summary_preferences_and_recent_messages() -> None:
     repository = FakeMemoryRepository()
+    repository.qdrant = object()
     repository.summary = "Resumo acumulado"
     repository.memories.append(
         {"_id": "memory-1", "tipo": "preferencia", "conteudo": "Respostas curtas"}
@@ -92,7 +94,6 @@ def test_context_combines_summary_preferences_and_recent_messages() -> None:
 
     result = service.obter_contexto(CONTEXT, session_id="session-1", pergunta="Como responder?")
 
-    assert result["status"] == "ok"
     assert "Resumo acumulado" in result["contexto"]
     assert "Respostas curtas" in result["contexto"]
     assert "Últimas mensagens" in result["contexto"]
@@ -109,7 +110,7 @@ def test_inferred_memory_requires_automatic_consent() -> None:
         conteudo="Há uma pendência",
         origem="inferida",
     )
-    assert blocked["salva"] is False
+    assert blocked is False
 
     service.configurar_consentimento(CONTEXT, modo="automatica")
     stored = service.registrar(
@@ -118,7 +119,7 @@ def test_inferred_memory_requires_automatic_consent() -> None:
         conteudo="Há uma pendência",
         origem="inferida",
     )
-    assert stored["salva"] is True
+    assert stored is True
 
 
 def test_memory_search_falls_back_to_mongo_when_qdrant_is_not_configured() -> None:
@@ -129,7 +130,7 @@ def test_memory_search_falls_back_to_mongo_when_qdrant_is_not_configured() -> No
 
     result = service.buscar(CONTEXT, pergunta="atrasos")
 
-    assert result["memorias"] == repository.memories
+    assert result == repository.memories
     assert repository.semantic_queries == []
 
 
@@ -144,11 +145,12 @@ def test_memory_search_falls_back_to_mongo_when_qdrant_fails() -> None:
 
     result = service.buscar(CONTEXT, pergunta="atrasos")
 
-    assert result["memorias"] == repository.memories
+    assert result == repository.memories
 
 
 def test_successful_empty_qdrant_search_does_not_fall_back_to_mongo() -> None:
     repository = FakeMemoryRepository()
+    repository.qdrant = object()
     repository.memories.append({"_id": "memory-1", "tipo": "decisao"})
     repository.semantic_search = lambda *_args: []
     repository.list_memories = lambda *_args, **_kwargs: pytest.fail(
@@ -158,7 +160,7 @@ def test_successful_empty_qdrant_search_does_not_fall_back_to_mongo() -> None:
 
     result = service.buscar(CONTEXT, pergunta="atrasos")
 
-    assert result["memorias"] == []
+    assert result == []
 
 
 def test_summary_is_incremental_and_threshold_based() -> None:
@@ -189,7 +191,7 @@ def test_close_empty_session_does_not_close_a_chat() -> None:
 
     result = service.encerrar_sessao(CONTEXT, session_id="missing")
 
-    assert result == {"status": "ok", "encerrada": False, "tem_mensagens": False}
+    assert result is False
 
 
 def test_list_chats_clamps_limit_and_returns_repository_results() -> None:
@@ -199,7 +201,7 @@ def test_list_chats_clamps_limit_and_returns_repository_results() -> None:
 
     result = service.listar_chats(CONTEXT, limit=999)
 
-    assert result == {"status": "ok", "count": 1, "chats": repository.chats}
+    assert result == repository.chats
     assert repository.last_list_limit == 100
 
 
@@ -219,6 +221,6 @@ def test_disabled_consent_stops_session_persistence_and_retrieval() -> None:
     )
     context = service.obter_contexto(CONTEXT, session_id="session-1", pergunta="O que foi dito?")
 
-    assert session["persistencia_ativa"] is False
-    assert message["salva"] is False
+    assert session is None
+    assert message is None
     assert context["contexto"] == ""

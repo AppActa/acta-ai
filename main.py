@@ -1,7 +1,6 @@
 """API HTTP do chatbot ACTA."""
 
 import uuid
-from time import perf_counter
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -25,7 +24,6 @@ from clients.skill_client import (
     excluir_skill,
     listar_skills,
 )
-from observability import instrument_fastapi_app, observed_span, record_chat_latency
 from pipeline import get_response
 
 app = FastAPI(
@@ -33,7 +31,6 @@ app = FastAPI(
     description="API do chatbot gerencial do ACTA",
     version="1.1.1",
 )
-instrument_fastapi_app(app)
 
 
 class NovaSessaoRequest(BaseModel):
@@ -136,8 +133,6 @@ def consultar_chats(usuario_id: int, empresa_id: int, limit: int = 50) -> dict:
 
 @app.post("/chat")
 def chat(request: ChatRequest) -> dict[str, str]:
-    started = perf_counter()
-    status = "ok"
     message = request.message.strip()
     session_id = request.session_id.strip()
     if not message:
@@ -150,25 +145,14 @@ def chat(request: ChatRequest) -> dict[str, str]:
         empresa_id=request.empresa_id,
     ):
         try:
-            with observed_span(
-                "acta_ai.chat",
-                {"acta.id_ciclo_present": request.id_ciclo is not None},
-            ):
-                response = get_response(
-                    message=message,
-                    session_id=session_id,
-                    id_ciclo=request.id_ciclo,
-                    ciclo_ativo=request.ciclo_ativo,
-                    empresa_id=request.empresa_id,
-                )
+            response = get_response(
+                message=message,
+                session_id=session_id,
+                id_ciclo=request.id_ciclo,
+                ciclo_ativo=request.ciclo_ativo,
+            )
         except SkillClientError as exc:
-            status = "invalid_skill"
             raise _chat_http_exception(exc) from exc
-        except Exception:
-            status = "error"
-            raise
-        finally:
-            record_chat_latency((perf_counter() - started) * 1000, status=status)
     return {"session_id": session_id, "resposta": response}
 
 @app.post("/chat/audio")
@@ -224,7 +208,6 @@ async def chat_audio(
                 session_id=session_id,
                 id_ciclo=scope.id_ciclo,
                 ciclo_ativo=scope.ciclo_ativo,
-                empresa_id=empresa_id,
             )
         except SkillClientError as exc:
             raise _chat_http_exception(exc) from exc

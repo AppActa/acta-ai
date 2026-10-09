@@ -12,8 +12,11 @@
 
 | Variável | Uso |
 | --- | --- |
-| `NVIDIA_API_KEY` | Acesso aos modelos NVIDIA configurados. |
-| `GROQ_API_KEY` | Acesso opcional aos modelos Groq. |
+| `OPENAI_API_KEY` | Acesso aos modelos de chat e transcrição da OpenAI. |
+| `ACTA_OPENAI_MODEL` | Modelo dos agentes; padrão `gpt-6-luna`. |
+| `ACTA_OPENAI_TRANSCRIPTION_MODEL` | Modelo de transcrição; padrão `gpt-transcribe`. |
+| `ACTA_OPENAI_REASONING_EFFORT` | Esforço de raciocínio do chat; padrão `none`, necessário para chamadas de tools no Chat Completions. |
+| `ACTA_OPENAI_MAX_TOKENS` | Limite de saída do chat; padrão `2048`. |
 | `ACTA_MCP_URL` | URL Streamable HTTP do MCP, normalmente `http://127.0.0.1:8000/mcp`. |
 | `ACTA_MCP_API_KEY` | Credencial compartilhada entre os serviços. |
 | `ACTA_MCP_TIMEOUT_SECONDS` | Tempo máximo de uma chamada MCP. |
@@ -23,7 +26,7 @@
 | `GEMINI_API_KEY` | Embeddings de memória e geração das lições aprendidas. |
 | `QDRANT_CLUSTER_ENDPOINT` e `QDRANT_API_KEY` | Índice semântico opcional para memória. |
 
-Os parâmetros de modelos, guardrails, especialistas e observabilidade estão
+Os parâmetros de modelos, guardrails e especialistas estão
 documentados no `.env.example`. Nunca versione o `.env` real.
 
 ## Desenvolvimento

@@ -4,16 +4,14 @@ import logging
 
 from langchain.agents import create_agent
 
-from agents.helpers.llms import llm_fast, llm_tool_agents, llm_tool_fast_agents
+from agents.helpers.llms import llm
 from agents.prompts.prompt_ciclo import CICLO_PROMPT_COMPLETO
 from agents.prompts.prompt_colaborador import COLABORADOR_PROMPT_COMPLETO
 from agents.prompts.prompt_faq import _PROMPT_FAQ
 from agents.prompts.prompt_formulario import FORMULARIO_PROMPT_COMPLETO
 from agents.prompts.prompt_indicadores import INDICADORES_PROMPT_COMPLETO
-from agents.prompts.prompt_juiz import JUIZ_PROMPT_COMPLETO
 from agents.prompts.prompt_licoes import LICOES_PROMPT_COMPLETO
 from agents.prompts.prompt_orquestrador import ORQUESTRADOR_PROMPT_COMPLETO
-from agents.prompts.prompt_predicao import PREDICAO_PROMPT_COMPLETO
 from agents.prompts.prompt_relatorio import RELATORIO_PROMPT_COMPLETO
 from agents.prompts.prompt_tarefas import TAREFAS_PROMPT_COMPLETO
 from clients.mcp_acta_client import call_acta_tool
@@ -22,7 +20,6 @@ from tools.colaborador_tools import TOOLS as COLABORADOR_TOOLS
 from tools.formulario_tools import TOOLS as FORMULARIO_TOOLS
 from tools.indicador_tools import TOOLS as INDICADORES_TOOLS
 from tools.licoes_tools import TOOLS as LICOES_MCP_TOOLS
-from tools.predicao_tools import TOOLS as PREDICAO_TOOLS
 from tools.relatorio_tools import TOOLS as RELATORIO_TOOLS
 from tools.tarefas_tools import TOOLS as TAREFAS_TOOLS
 
@@ -37,60 +34,50 @@ ESPECIALISTAS_VALIDOS = (
     "formularios",
     "indicadores",
     "relatorios",
-    "predicoes",
 )
 ALIASES_ESPECIALISTAS = {"faq": "rag"}
 
 ciclo_agent = create_agent(
-    model=llm_tool_agents,
+    model=llm,
     tools=CICLO_TOOLS,
     system_prompt=CICLO_PROMPT_COMPLETO,
 )
-licoes_agent = create_agent(model=llm_tool_agents, tools=LICOES_MCP_TOOLS, system_prompt=LICOES_PROMPT_COMPLETO)
+licoes_agent = create_agent(
+    model=llm,
+    tools=LICOES_MCP_TOOLS,
+    system_prompt=LICOES_PROMPT_COMPLETO,
+)
 colaboradores_agent = create_agent(
-    model=llm_tool_agents,
+    model=llm,
     tools=COLABORADOR_TOOLS,
     system_prompt=COLABORADOR_PROMPT_COMPLETO,
 )
 formularios_agent = create_agent(
-    model=llm_tool_agents,
+    model=llm,
     tools=FORMULARIO_TOOLS,
     system_prompt=FORMULARIO_PROMPT_COMPLETO,
 )
 indicadores_agent = create_agent(
-    model=llm_tool_fast_agents,
+    model=llm,
     tools=INDICADORES_TOOLS,
     system_prompt=INDICADORES_PROMPT_COMPLETO,
 )
-predicoes_agent = create_agent(
-    model=llm_tool_agents,
-    tools=PREDICAO_TOOLS,
-    system_prompt=PREDICAO_PROMPT_COMPLETO,
-)
 relatorios_agent = create_agent(
-    model=llm_tool_agents,
+    model=llm,
     tools=RELATORIO_TOOLS,
     system_prompt=RELATORIO_PROMPT_COMPLETO,
 )
 tarefas_agent = create_agent(
-    model=llm_tool_agents,
+    model=llm,
     tools=TAREFAS_TOOLS,
     system_prompt=TAREFAS_PROMPT_COMPLETO,
 )
 
 orquestrador = create_agent(
-    model=llm_fast,
+    model=llm,
     system_prompt=ORQUESTRADOR_PROMPT_COMPLETO,
 )
-juiz = create_agent(model=llm_fast, system_prompt=JUIZ_PROMPT_COMPLETO)
 
-saudacao_agent = create_agent(
-    model=llm_fast,
-    system_prompt=(
-        "Responda em português a saudações, agradecimentos ou conversa casual. "
-        "Seja breve, cordial e natural. Não invente informações."
-    ),
-)
 
 def responder_faq(pergunta: str) -> str:
     """Responde perguntas conceituais usando a base de conhecimento do ACTA."""
@@ -117,7 +104,7 @@ def responder_faq(pergunta: str) -> str:
         )
         if not contexto or not contexto.strip():
             return "Não encontrei informação suficiente na base do ACTA para responder essa pergunta."
-        resposta = llm_fast.invoke(
+        resposta = llm.invoke(
             _PROMPT_FAQ.format(contexto=contexto, pergunta=pergunta)
         ).content
         return resposta.strip()
@@ -135,10 +122,8 @@ __all__ = [
     "colaboradores_agent",
     "formularios_agent",
     "indicadores_agent",
-    "juiz",
     "licoes_agent",
     "orquestrador",
-    "predicoes_agent",
     "responder_faq",
     "relatorios_agent",
     "tarefas_agent",

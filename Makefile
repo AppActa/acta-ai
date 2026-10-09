@@ -1,6 +1,6 @@
 UV ?= uv
 COVERAGE_MIN ?= 80
-COVERAGE_SOURCES = agents clients config main observability pipeline tools
+COVERAGE_SOURCES = agents clients config main pipeline tools
 COVERAGE_ARGS = $(foreach source,$(COVERAGE_SOURCES),--cov=$(source))
 
 .PHONY: validate
