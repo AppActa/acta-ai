@@ -397,7 +397,9 @@ def test_delete_memory_soft_deletes_and_removes_vector() -> None:
     assert repository.delete_memory(CONTEXT, "missing") is False
 
 
-def test_delete_memory_remains_hidden_and_cleanup_retries_failed_qdrant_delete() -> None:
+def test_delete_memory_remains_hidden_and_cleanup_retries_failed_qdrant_delete(
+    monkeypatch,
+) -> None:
     class RecoveringQdrant(FakeQdrant):
         fail_delete = True
 
@@ -444,6 +446,7 @@ def test_delete_memory_remains_hidden_and_cleanup_retries_failed_qdrant_delete()
 
             return FakeCursor([doc for doc in self.documents if matches(doc, query)])
 
+    monkeypatch.setattr(memory_repository, "gerar_embedding", lambda _: [0.25] * 768)
     qdrant = RecoveringQdrant()
     repository = _repository(qdrant)
     repository.messages = FakeCollection([])
