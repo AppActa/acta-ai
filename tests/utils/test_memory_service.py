@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from agents.helpers.memory.service import MemoryService
+from clients.mcp_acta_client import MCPRequestContext as RequestContext
 
 
 class FakeMemoryRepository:

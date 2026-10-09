@@ -9,10 +9,10 @@ from uuid import uuid4
 from pymongo.database import Database
 from qdrant_client import QdrantClient, models
 
-from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from agents.helpers.embeddings import gerar_embedding
 from agents.helpers.errors import AuthorizationError, NotFoundError
 from agents.helpers.serialization import serialize
+from clients.mcp_acta_client import MCPRequestContext as RequestContext
 
 logger = logging.getLogger(__name__)
 

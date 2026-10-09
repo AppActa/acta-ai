@@ -2,10 +2,10 @@ from copy import deepcopy
 
 import pytest
 
-from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from agents.helpers.errors import NotFoundError
 from agents.helpers.skills.compiler import parse_skill_markdown
 from agents.helpers.skills.service import SkillsService
+from clients.mcp_acta_client import MCPRequestContext as RequestContext
 
 SAFE_SKILL = """# Resumo Executivo
 

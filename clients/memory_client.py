@@ -3,8 +3,8 @@
 from datetime import datetime
 from typing import Any
 
-from clients.mcp_acta_client import current_mcp_request_context
 from agents.helpers.runtime import get_memory_service
+from clients.mcp_acta_client import current_mcp_request_context
 
 _ROLE_MAP = {
     "human": "usuario",

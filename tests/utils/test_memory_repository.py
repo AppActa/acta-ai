@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import pytest
 from qdrant_client import models
 
-from clients.mcp_acta_client import MCPRequestContext as RequestContext
 from agents.helpers.errors import AuthorizationError, NotFoundError
 from agents.helpers.memory import repository as memory_repository
 from agents.helpers.memory.repository import MemoryRepository
+from clients.mcp_acta_client import MCPRequestContext as RequestContext
 
 CONTEXT = RequestContext(
     usuario_id=7,

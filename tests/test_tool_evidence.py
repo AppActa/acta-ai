@@ -57,9 +57,11 @@ def test_faq_tool_is_exempt_from_cycle_scope_and_still_propagates_errors(monkeyp
         raise error
 
     monkeypatch.setattr(mcp_acta_client, "_run_async_in_sync_context", fail)
-    with mcp_acta_client.mcp_cycle_scope_context([]):
-        with pytest.raises(RuntimeError, match="FAQ indisponível") as raised:
-            mcp_acta_client.call_acta_tool("faq_retriever", {"question": "Como funciona?"})
+    with (
+        mcp_acta_client.mcp_cycle_scope_context([]),
+        pytest.raises(RuntimeError, match="FAQ indisponível") as raised,
+    ):
+        mcp_acta_client.call_acta_tool("faq_retriever", {"question": "Como funciona?"})
 
     assert raised.value is error
 
@@ -77,9 +79,11 @@ def test_contextvars_are_copied_to_helper_thread(monkeypatch) -> None:
     async def call_from_running_loop():
         return mcp_acta_client._run_async_in_sync_context("ciclo_visao_geral", {})
 
-    with mcp_acta_client.mcp_request_context(usuario_id=3, empresa_id=4):
-        with mcp_acta_client.mcp_cycle_scope_context([8, 4]):
-            result = asyncio.run(call_from_running_loop())
+    with (
+        mcp_acta_client.mcp_request_context(usuario_id=3, empresa_id=4),
+        mcp_acta_client.mcp_cycle_scope_context([8, 4]),
+    ):
+        result = asyncio.run(call_from_running_loop())
 
     assert result == {"status": "ok"}
     assert observed["request"].usuario_id == 3
