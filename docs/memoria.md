@@ -37,5 +37,6 @@ As mensagens possuem TTL configurável. Memórias explícitas persistem até exc
 usuário, salvo se ele escolher uma retenção. Exclusão e expiração removem o registro
 canônico e o vetor correspondente.
 
-Se o Qdrant ou a chave Gemini não estiverem configurados, a memória segue persistida
-no MongoDB e a busca usa os registros recentes como fallback.
+Se o Qdrant ou a chave Gemini não estiverem configurados, ou se a busca semântica falhar,
+a leitura usa os registros recentes do MongoDB como fallback. Uma busca bem-sucedida no
+Qdrant sem resultados permanece vazia; o MongoDB não substitui uma resposta semântica válida.

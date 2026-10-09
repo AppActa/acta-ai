@@ -44,10 +44,13 @@ Endpoints locais:
 ## Configuração mínima
 
 ```env
-NVIDIA_API_KEY=sua_chave
+OPENAI_API_KEY=sua_chave
 ACTA_MCP_URL=http://127.0.0.1:8000/mcp
 ACTA_MCP_API_KEY=mesmo_segredo_do_mcp
 ```
+
+O chat usa `gpt-6-luna` e a transcrição de áudio usa `gpt-transcribe`. Os nomes podem
+ser ajustados por `ACTA_OPENAI_MODEL` e `ACTA_OPENAI_TRANSCRIPTION_MODEL`.
 
 Para chamadas feitas fora de uma rota HTTP, defina também
 `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID`. As rotas da API recebem esses

@@ -17,13 +17,3 @@ def gerar_embedding(texto: str) -> list[float]:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY não configurada para busca semântica.")
     return _embeddings(GEMINI_API_KEY).embed_query(texto, output_dimensionality=EMBEDDING_DIM)
-
-
-def gerar_embeddings_batch(textos: list[str]) -> list[list[float]]:
-    if not textos:
-        return []
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY não configurada para busca semântica.")
-    return _embeddings(GEMINI_API_KEY).embed_documents(
-        textos, output_dimensionality=EMBEDDING_DIM
-    )

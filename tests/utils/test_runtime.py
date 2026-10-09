@@ -1,5 +1,5 @@
+from agents.helpers import runtime
 from clients.mcp_acta_client import mcp_request_context
-from utils import runtime
 
 
 def test_memory_and_skill_services_are_cached_and_initialized(monkeypatch) -> None:

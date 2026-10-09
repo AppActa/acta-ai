@@ -1,13 +1,13 @@
 """API HTTP do chatbot ACTA."""
 
 import uuid
-from time import perf_counter
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.estado import consolidar_memoria
+from agents.helpers.errors import AuthorizationError, NotFoundError
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
@@ -17,6 +17,7 @@ from clients.memory_client import (
     excluir_memoria,
     listar_chats,
     listar_memorias,
+    listar_mensagens,
     obter_consentimento,
 )
 from clients.skill_client import (
@@ -25,7 +26,6 @@ from clients.skill_client import (
     excluir_skill,
     listar_skills,
 )
-from observability import instrument_fastapi_app, observed_span, record_chat_latency
 from pipeline import get_response
 
 app = FastAPI(
@@ -33,7 +33,6 @@ app = FastAPI(
     description="API do chatbot gerencial do ACTA",
     version="1.1.1",
 )
-instrument_fastapi_app(app)
 
 
 class NovaSessaoRequest(BaseModel):
@@ -45,9 +44,34 @@ class NovaSessaoRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str = Field(..., min_length=1)
-    id_ciclo: int | None = Field(default=None, gt=0)
+    id_ciclo: list[int] = Field(default_factory=list, max_length=20)
+    ciclo_ativo: int | None = Field(default=None, gt=0)
     usuario_id: int = Field(..., gt=0)
     empresa_id: int = Field(..., gt=0)
+
+    @field_validator("id_ciclo", mode="before")
+    @classmethod
+    def _aceitar_ciclo_legado(cls, cycles: object) -> object:
+        if cycles is None:
+            return []
+        if isinstance(cycles, int):
+            return [cycles]
+        return cycles
+
+    @field_validator("id_ciclo")
+    @classmethod
+    def _normalizar_ciclos(cls, cycles: list[int]) -> list[int]:
+        if len(cycles) > 20:
+            raise ValueError("id_ciclo aceita no máximo 20 ciclos.")
+        if any(cycle <= 0 for cycle in cycles):
+            raise ValueError("id_ciclo deve conter somente inteiros positivos.")
+        return list(dict.fromkeys(cycles))
+
+    @model_validator(mode="after")
+    def _validar_ciclo_ativo(self) -> "ChatRequest":
+        if self.ciclo_ativo is not None and self.ciclo_ativo not in self.id_ciclo:
+            raise ValueError("ciclo_ativo deve estar presente em id_ciclo.")
+        return self
 
 
 class ConsentimentoRequest(BaseModel):
@@ -109,10 +133,25 @@ def consultar_chats(usuario_id: int, empresa_id: int, limit: int = 50) -> dict:
         return {"chats": listar_chats(limit=limit)}
 
 
+@app.get("/chats/{session_id}/mensagens")
+def consultar_mensagens(
+    session_id: str,
+    usuario_id: int,
+    empresa_id: int,
+    limit: int = Query(default=30, ge=1, le=100),
+) -> dict:
+    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+        try:
+            messages = listar_mensagens(session_id, limit=limit)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except AuthorizationError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"session_id": session_id, "mensagens": messages}
+
+
 @app.post("/chat")
 def chat(request: ChatRequest) -> dict[str, str]:
-    started = perf_counter()
-    status = "ok"
     message = request.message.strip()
     session_id = request.session_id.strip()
     if not message:
@@ -125,24 +164,14 @@ def chat(request: ChatRequest) -> dict[str, str]:
         empresa_id=request.empresa_id,
     ):
         try:
-            with observed_span(
-                "acta_ai.chat",
-                {"acta.id_ciclo_present": request.id_ciclo is not None},
-            ):
-                response = get_response(
-                    message=message,
-                    session_id=session_id,
-                    id_ciclo=request.id_ciclo,
-                    empresa_id=request.empresa_id,
-                )
+            response = get_response(
+                message=message,
+                session_id=session_id,
+                id_ciclo=request.id_ciclo,
+                ciclo_ativo=request.ciclo_ativo,
+            )
         except SkillClientError as exc:
-            status = "invalid_skill"
             raise _chat_http_exception(exc) from exc
-        except Exception:
-            status = "error"
-            raise
-        finally:
-            record_chat_latency((perf_counter() - started) * 1000, status=status)
     return {"session_id": session_id, "resposta": response}
 
 @app.post("/chat/audio")
@@ -151,8 +180,20 @@ async def chat_audio(
     session_id: str = Form(..., min_length=1),
     usuario_id: int = Form(..., gt=0),
     empresa_id: int = Form(..., gt=0),
-    id_ciclo: int | None = Form(default=None, gt=0),
+    id_ciclo: list[int] = Form(default_factory=list),  # noqa: B008 - default de formulário
+    ciclo_ativo: int | None = Form(default=None, gt=0),
 ) -> dict[str, str]:
+    try:
+        scope = ChatRequest(
+            message="audio",
+            session_id=session_id,
+            id_ciclo=id_ciclo,
+            ciclo_ativo=ciclo_ativo,
+            usuario_id=usuario_id,
+            empresa_id=empresa_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     conteudo = await audio.read()
 
     if not conteudo:
@@ -184,8 +225,8 @@ async def chat_audio(
             resposta = get_response(
                 message=transcricao,
                 session_id=session_id,
-                id_ciclo=id_ciclo,
-                empresa_id=empresa_id,
+                id_ciclo=scope.id_ciclo,
+                ciclo_ativo=scope.ciclo_ativo,
             )
         except SkillClientError as exc:
             raise _chat_http_exception(exc) from exc
@@ -211,7 +252,11 @@ def consultar_memorias(
 
 
 @app.delete("/memoria/{id_memoria}")
-def apagar_memoria(id_memoria: str, usuario_id: int, empresa_id: int) -> dict:
+def apagar_memoria(
+    id_memoria: str,
+    usuario_id: int,
+    empresa_id: int,
+) -> dict:
     """Remove um item da fonte MongoDB e do índice semântico Qdrant."""
 
     with mcp_request_context(
@@ -234,7 +279,10 @@ def buscar_memorias_semanticamente(
 
 
 @app.get("/memoria/consentimento")
-def consultar_consentimento(usuario_id: int, empresa_id: int) -> dict:
+def consultar_consentimento(
+    usuario_id: int,
+    empresa_id: int,
+) -> dict:
     with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
         return obter_consentimento()
 

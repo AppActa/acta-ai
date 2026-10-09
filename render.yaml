@@ -6,20 +6,16 @@ services:
     healthCheckPath: /health
     autoDeploy: false
     envVars:
-      - key: NVIDIA_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: ACTA_LLM_PRIMARY_MODEL
-        value: deepseek-ai/deepseek-v4-pro
-      - key: ACTA_LLM_PRIMARY_FALLBACK_MODEL
-        value: deepseek-ai/deepseek-v4-flash
-      - key: ACTA_LLM_FAST_MODEL
-        value: deepseek-ai/deepseek-v4-flash
-      - key: ACTA_LLM_FAST_FALLBACK_MODEL
-        value: minimaxai/minimax-m3
-      - key: ACTA_LLM_PRIMARY_MAX_TOKENS
+      - key: ACTA_OPENAI_MODEL
+        value: gpt-6-luna
+      - key: ACTA_OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-transcribe
+      - key: ACTA_OPENAI_REASONING_EFFORT
+        value: none
+      - key: ACTA_OPENAI_MAX_TOKENS
         value: "2048"
-      - key: ACTA_LLM_FAST_MAX_TOKENS
-        value: "1024"
       - key: ACTA_SPECIALIST_FEW_SHOTS
         value: "false"
       - key: MONGODB_URI

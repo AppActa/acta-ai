@@ -15,18 +15,35 @@ from agents.estado import (
     no_orquestrador,
     no_roteador,
 )
+from agents.estado import (
+    _pergunta_abrangente as _pergunta_comparativa,
+)
 from agents.guardrail import anonimizar_entrada, guardrail_entrada
 from agents.skill_builder import gerar_markdown_skill
-from clients.mcp_acta_client import mcp_identity_scope, mcp_tool_cache_context
+from clients.mcp_acta_client import (
+    mcp_cycle_scope_context,
+    mcp_identity_scope,
+    mcp_tool_cache_context,
+)
 from clients.skill_client import (
     SkillClientError,
     criar_skill,
     eh_pedido_criacao_skill,
     resolver_comando_skill,
 )
-from observability import observed_span
 
 logger = logging.getLogger(__name__)
+
+
+def _normalizar_ids_ciclo(id_ciclo: int | list[int] | None) -> list[int]:
+    if id_ciclo is None:
+        return []
+    raw_ids = [id_ciclo] if isinstance(id_ciclo, int) else id_ciclo
+    if len(raw_ids) > 20:
+        raise ValueError("id_ciclo aceita no máximo 20 ciclos.")
+    if any(not isinstance(cycle_id, int) or cycle_id <= 0 for cycle_id in raw_ids):
+        raise ValueError("id_ciclo deve conter somente inteiros positivos.")
+    return list(dict.fromkeys(raw_ids))
 
 
 def _criar_skill_pelo_chatbot(request: str) -> str:
@@ -85,8 +102,8 @@ fluxo_agentes = construir_fluxo()
 def executar_fluxo_acta(
     pergunta_usuario: str,
     session_id: str,
-    id_ciclo: int | None = None,
-    empresa_id: int | None = None,
+    id_ciclo: int | list[int] | None = None,
+    ciclo_ativo: int | None = None,
 ) -> str:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
@@ -100,32 +117,31 @@ def executar_fluxo_acta(
         raise ValueError("pergunta_usuario é obrigatória.")
     if not session_key:
         raise ValueError("session_id é obrigatório.")
-    if id_ciclo is not None and id_ciclo <= 0:
-        raise ValueError("id_ciclo deve ser um inteiro positivo.")
+    cycle_ids = _normalizar_ids_ciclo(id_ciclo)
+    if ciclo_ativo is not None and ciclo_ativo not in cycle_ids:
+        raise ValueError("ciclo_ativo deve estar presente em id_ciclo.")
+    if ciclo_ativo is not None:
+        cycle_ids.remove(ciclo_ativo)
+        cycle_ids.insert(0, ciclo_ativo)
 
     initial_state = {
         "messages": [{"role": "human", "content": question}],
-        "agentes_chamados": [],
         "rota": "",
         "especialistas": [],
         "respostas_especialistas": [],
         "evidencias_tools": [],
         "mapa_pii": {},
         "session_id": session_key,
-        "id_ciclo": id_ciclo,
+        "id_ciclo": cycle_ids,
+        "ciclo_ativo": ciclo_ativo,
         "contexto_memoria": "",
         "resposta_final": "",
-        "avaliacao_juiz": {},
-        "latencias_ms": {},
         "skill_ativa": active_skill,
     }
-    with mcp_tool_cache_context(), observed_span(
-        "acta_ai.pipeline",
-        {
-            "acta.id_ciclo_present": id_ciclo is not None,
-            "acta.skill_active": active_skill is not None,
-        },
-    ):
+    query_scope = cycle_ids
+    if ciclo_ativo is not None and not _pergunta_comparativa(question):
+        query_scope = [ciclo_ativo]
+    with mcp_tool_cache_context(), mcp_cycle_scope_context(query_scope):
         final_state = fluxo_agentes.invoke(
             initial_state,
             config={
@@ -134,12 +150,6 @@ def executar_fluxo_acta(
                 }
             },
         )
-
-    logger.info(
-        "Pipeline ACTA concluída: session_id=%s latencias_ms=%s",
-        session_key,
-        final_state.get("latencias_ms", {}),
-    )
 
     answer = final_state.get("resposta_final", "").strip()
     if answer:
@@ -155,8 +165,8 @@ def executar_fluxo_acta(
 def get_response(
     message: str,
     session_id: str,
-    id_ciclo: int | None = None,
-    empresa_id: int | None = None,
+    id_ciclo: int | list[int] | None = None,
+    ciclo_ativo: int | None = None,
 ) -> str:
     """Mantém o contrato utilizado pela API FastAPI."""
 
@@ -164,5 +174,5 @@ def get_response(
         message,
         session_id,
         id_ciclo=id_ciclo,
-        empresa_id=empresa_id,
+        ciclo_ativo=ciclo_ativo,
     )

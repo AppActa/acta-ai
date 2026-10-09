@@ -2,6 +2,10 @@ from functools import lru_cache
 
 from pymongo import MongoClient
 
+from agents.helpers.memory.repository import MemoryRepository
+from agents.helpers.memory.service import MemoryService
+from agents.helpers.skills.repository import SkillsRepository
+from agents.helpers.skills.service import SkillsService
 from clients.mcp_acta_client import MCPRequestContext
 from config import (
     ACTA_MEMORY_INFERRED_RETENTION_DAYS,
@@ -17,10 +21,6 @@ from config import (
     QDRANT_MEMORY_VECTOR_SIZE,
     QDRANT_TIMEOUT_SECONDS,
 )
-from utils.memory.repository import MemoryRepository
-from utils.memory.service import MemoryService
-from utils.skills.repository import SkillsRepository
-from utils.skills.service import SkillsService
 
 
 @lru_cache(maxsize=1)

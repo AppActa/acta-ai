@@ -10,13 +10,10 @@ def test_resolves_slash_command_and_removes_it_before_pipeline(monkeypatch) -> N
         def obter(self, context, *, nome):
             calls.append((context.usuario_id, context.empresa_id, nome))
             return {
-                "status": "ok",
-                "skill": {
-                    "nome": "Resumo Executivo",
-                    "slug": "resumo-executivo",
-                    "objetivo": "Resumir.",
-                    "regras": "Usar tópicos.",
-                },
+                "nome": "Resumo Executivo",
+                "slug": "resumo-executivo",
+                "objetivo": "Resumir.",
+                "regras": "Usar tópicos.",
             }
 
     monkeypatch.setattr(skill_client, "get_skills_service", lambda: SkillsService())

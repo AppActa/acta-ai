@@ -5,9 +5,9 @@ from uuid import uuid4
 from pymongo import ReturnDocument
 from pymongo.database import Database
 
+from agents.helpers.serialization import serialize
+from agents.helpers.skills.schemas import SkillDefinition
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.serialization import serialize
-from utils.skills.schemas import SkillDefinition
 
 
 class SkillsRepository:

@@ -16,6 +16,17 @@ def ciclo_visao_geral(id_ciclo: int) -> dict | str:
 
 
 @tool
+def ciclos_buscar_por_descricao(termo: str, limit: int = 5) -> dict | str:
+    """Busca ciclos autorizados por título ou trecho da descrição."""
+
+    return call_mcp_tool(
+        "ciclos_buscar_por_descricao",
+        termo=termo,
+        limit=limit,
+    )
+
+
+@tool
 def ciclo_problema_principal(id_ciclo: int) -> dict | str:
     """Consulta o problema principal e sua causa raiz prioritária."""
 
@@ -126,6 +137,7 @@ def treinamentos_criar(
 
 
 TOOLS = [
+    ciclos_buscar_por_descricao,
     ciclo_visao_geral,
     ciclo_problema_principal,
     ciclo_causas_raiz,

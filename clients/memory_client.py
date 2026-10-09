@@ -3,8 +3,15 @@
 from datetime import datetime
 from typing import Any
 
+from agents.helpers.runtime import get_memory_service
 from clients.mcp_acta_client import current_mcp_request_context
-from utils.runtime import get_memory_service
+
+_ROLE_MAP = {
+    "human": "usuario",
+    "user": "usuario",
+    "ai": "assistente",
+    "assistant": "assistente",
+}
 
 
 def garantir_sessao(session_id: str, metadata: dict[str, Any] | None = None) -> None:
@@ -16,16 +23,10 @@ def garantir_sessao(session_id: str, metadata: dict[str, Any] | None = None) -> 
 def salvar_mensagem(
     *, session_id: str, role: str, content: str, agent: str, metadata: dict[str, Any] | None = None
 ) -> None:
-    role_map = {
-        "human": "usuario",
-        "user": "usuario",
-        "ai": "assistente",
-        "assistant": "assistente",
-    }
     get_memory_service().salvar_mensagem(
         current_mcp_request_context(),
         session_id=session_id,
-        role=role_map.get(role.lower(), role.lower()),
+        role=_ROLE_MAP.get(role.lower(), role.lower()),
         content=content,
         agent=agent,
         metadata=metadata or {},
@@ -50,15 +51,19 @@ def obter_material_resumo(session_id: str, *, forcar: bool = False) -> dict[str,
 
 
 def encerrar_sessao(session_id: str) -> bool:
-    result = get_memory_service().encerrar_sessao(
+    return get_memory_service().encerrar_sessao(
         current_mcp_request_context(), session_id=session_id
     )
-    return bool(result.get("encerrada"))
 
 
 def listar_chats(limit: int = 50) -> list[dict[str, Any]]:
-    result = get_memory_service().listar_chats(current_mcp_request_context(), limit=limit)
-    return list(result.get("chats", []))
+    return get_memory_service().listar_chats(current_mcp_request_context(), limit=limit)
+
+
+def listar_mensagens(session_id: str, limit: int = 30) -> list[dict[str, Any]]:
+    return get_memory_service().listar_mensagens(
+        current_mcp_request_context(), session_id=session_id, limit=limit
+    )
 
 
 def atualizar_resumo(session_id: str, resumo: str, resumido_ate: str | datetime) -> None:
@@ -79,7 +84,7 @@ def registrar_memoria(
     origem: str = "explicita",
     confianca: float = 1.0,
 ) -> bool:
-    result = get_memory_service().registrar(
+    return get_memory_service().registrar(
         current_mcp_request_context(),
         tipo=tipo,
         conteudo=conteudo,
@@ -87,19 +92,16 @@ def registrar_memoria(
         confianca=confianca,
         session_id_origem=session_id,
     )
-    return bool(result.get("salva"))
 
 
 def buscar_memorias(pergunta: str, limit: int = 6) -> list[dict[str, Any]]:
-    result = get_memory_service().buscar(
+    return get_memory_service().buscar(
         current_mcp_request_context(), pergunta=pergunta, limit=limit
     )
-    return list(result.get("memorias", []))
 
 
 def listar_memorias(tipo: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-    result = get_memory_service().listar(current_mcp_request_context(), tipo=tipo, limit=limit)
-    return list(result.get("memorias", []))
+    return get_memory_service().listar(current_mcp_request_context(), tipo=tipo, limit=limit)
 
 
 def excluir_memoria(id_memoria: str) -> None:
@@ -107,12 +109,10 @@ def excluir_memoria(id_memoria: str) -> None:
 
 
 def obter_consentimento() -> dict[str, Any]:
-    result = get_memory_service().obter_consentimento(current_mcp_request_context())
-    return dict(result.get("consentimento", {}))
+    return get_memory_service().obter_consentimento(current_mcp_request_context())
 
 
 def configurar_consentimento(modo: str, retencao_dias: int | None = None) -> dict[str, Any]:
-    result = get_memory_service().configurar_consentimento(
+    return get_memory_service().configurar_consentimento(
         current_mcp_request_context(), modo=modo, retencao_dias=retencao_dias
     )
-    return dict(result.get("consentimento", {}))
