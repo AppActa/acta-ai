@@ -629,7 +629,6 @@ def no_roteador(estado: Estado) -> dict:
             "resposta_final": message,
         }
 
-    cycle_ids = _ids_ciclo_estado(estado)
     return {
         "rota": "especialistas",
         "especialistas": selected,

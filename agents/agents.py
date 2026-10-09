@@ -15,7 +15,8 @@ from agents.prompts.prompt_orquestrador import ORQUESTRADOR_PROMPT_COMPLETO
 from agents.prompts.prompt_relatorio import RELATORIO_PROMPT_COMPLETO
 from agents.prompts.prompt_tarefas import TAREFAS_PROMPT_COMPLETO
 from clients.mcp_acta_client import call_acta_tool
-from tools.ciclo_tools import TOOLS as CICLO_TOOLS, ciclos_buscar_por_descricao
+from tools.ciclo_tools import TOOLS as CICLO_TOOLS
+from tools.ciclo_tools import ciclos_buscar_por_descricao
 from tools.colaborador_tools import TOOLS as COLABORADOR_TOOLS
 from tools.formulario_tools import TOOLS as FORMULARIO_TOOLS
 from tools.indicador_tools import TOOLS as INDICADORES_TOOLS
