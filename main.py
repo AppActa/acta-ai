@@ -16,8 +16,8 @@ from clients.memory_client import (
     encerrar_sessao,
     excluir_memoria,
     listar_chats,
-    listar_mensagens,
     listar_memorias,
+    listar_mensagens,
     obter_consentimento,
 )
 from clients.skill_client import (
