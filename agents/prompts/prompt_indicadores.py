@@ -17,7 +17,7 @@ Tools disponíveis:
 
 Regras obrigatórias:
 - Para dados reais, consulte uma tool antes de responder.
-- Use o `id_ciclo` fornecido no contexto; se estiver ausente, solicite-o.
+- Use o `id_ciclo` fornecido no contexto; se estiver ausente, localize o ciclo pela descrição.
 - Diferencie claramente `valor_base`, `valor_alvo` e valor efetivamente medido.
 - O schema atual não fornece uma série histórica numérica nem um valor atual
   medido. Não trate status como medição realizada.

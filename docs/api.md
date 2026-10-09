@@ -56,10 +56,11 @@ mensagens. Portanto, uma conversa vazia não é criada, resumida nem listada.
 `id_ciclo` aceita o formato legado de um inteiro ou uma lista opcional com até 20 IDs
 positivos. O inteiro legado é normalizado para lista. IDs duplicados são removidos
 mantendo a ordem da primeira ocorrência. `ciclo_ativo` também é opcional e, quando
-informado, precisa constar na lista; ele é consultado primeiro. Lista ausente ou
-vazia não permite consultas de dados de ciclo. Perguntas comparativas usam chamadas
-MCP separadas para cada ID permitido; sem ciclo ativo, perguntas ambíguas com vários
-ciclos pedem que o usuário escolha. Cada chamada continua sendo autorizada pelo MCP.
+informado, precisa constar na lista; ele é consultado primeiro. Quando não há ID de
+ciclo, o agente pode buscar ciclos acessíveis pelo título ou descrição. Se houver um
+único resultado compatível, usa esse ciclo nas consultas; se houver várias opções,
+pede ao usuário que escolha sem expor os IDs. Perguntas comparativas usam chamadas
+MCP separadas para cada ID permitido. Cada chamada continua sendo autorizada pelo MCP.
 A resposta contém o mesmo `session_id` e o campo `resposta`. Mensagens de usuário e
 assistente são persistidas pelo fluxo da conversa.
 

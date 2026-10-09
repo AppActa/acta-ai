@@ -29,7 +29,11 @@ from agents.guardrail import anonimizar_entrada, guardrail_entrada, guardrail_sa
 from agents.helpers.llms import llm
 from agents.juiz import avaliar_resposta
 from agents.prompts.prompt_memory_mongo import _PROMPT_CONSOLIDAR_MEMORIA_ACTA
-from clients.mcp_acta_client import call_acta_tool, mcp_tool_evidence_context
+from clients.mcp_acta_client import (
+    call_acta_tool,
+    mcp_discovered_cycle_scope_context,
+    mcp_tool_evidence_context,
+)
 from config import JEV_API_KEY
 from tools.licoes_tools import licoes_context
 
@@ -253,10 +257,27 @@ def _executar_agente(
     ]
     cycle_ids = _ids_ciclo_estado(estado)
     if cycle_ids:
+        if len(cycle_ids) > 1 and estado.get("ciclo_ativo") is None:
+            context_parts.append(
+                "Há vários ciclos autorizados e nenhum foi indicado como ativo. Use "
+                "ciclos_buscar_por_descricao para encontrar o ciclo mencionado; não escolha "
+                "pela ordem da lista. Trate os IDs como internos e não os mostre ao usuário. "
+                "Para comparações explícitas, consulte cada ciclo "
+                f"autorizado separadamente: {cycle_ids}."
+            )
+        else:
+            context_parts.append(
+                "IDs de ciclos autorizados nesta requisição, na ordem de consulta: "
+                f"{cycle_ids}. Em perguntas comparativas, consulte cada ciclo em uma chamada "
+                "separada; nunca use IDs fora desta lista. Use esses IDs apenas nas tools e "
+                "não os mostre ao usuário. O primeiro ciclo é a preferência ativa."
+            )
+    else:
         context_parts.append(
-            "IDs de ciclos autorizados nesta requisição, na ordem de consulta: "
-            f"{cycle_ids}. Em perguntas comparativas, consulte cada ciclo em uma chamada "
-            "separada; nunca use IDs fora desta lista. O primeiro ciclo é a preferência ativa."
+            "Nenhum ciclo foi identificado pela requisição. Antes de consultar dados, "
+            "use a ferramenta ciclos_buscar_por_descricao com termos da pergunta. "
+            "Só consulte um ciclo se houver um único resultado compatível; se houver "
+            "mais de um, peça ao usuário que escolha."
         )
     if estado.get("contexto_memoria"):
         context_parts.append(estado["contexto_memoria"])
@@ -267,9 +288,10 @@ def _executar_agente(
         "Contexto fornecido pela aplicação. Use-o somente para responder à mensagem atual:\n"
         + "\n\n".join(context_parts)
     )
-    output = agent.invoke(
-        {"messages": [SystemMessage(content=context), *estado["messages"]]}
-    )
+    with mcp_discovered_cycle_scope_context():
+        output = agent.invoke(
+            {"messages": [SystemMessage(content=context), *estado["messages"]]}
+        )
     return _texto_mensagem(output["messages"][-1]).strip()
 
 
@@ -280,40 +302,70 @@ def _executar_rag(estado: Estado) -> str:
 
 
 def _executar_licoes(estado: Estado) -> str:
-    cycle_ids = _ids_ciclo_estado(estado)
-    if not cycle_ids:
-        return "Informe o ciclo para consultar lições aprendidas."
-    id_ciclo = cycle_ids[0]
-    user_message = _ultima_mensagem(estado, "human")
-    question = _texto_mensagem(user_message).strip() if user_message else ""
-    normalized = _normalizar_texto(question)
-    if any(marker in normalized for marker in ("crie uma licao", "criar uma licao", "registre uma licao", "gere uma licao")):
-        with licoes_context(id_ciclo=id_ciclo):
-            return _executar_agente(licoes_agent, estado, "Crie uma lição aprendida para o ciclo ativo.")
-    tool_name = "licoes_resumir" if any(marker in normalized for marker in ("resuma", "resumo das licoes", "sintetize as licoes")) else "licoes_perguntar"
-    query_ids = _ciclos_para_consulta(estado)
-    if not query_ids:
-        return "Qual ciclo devo consultar?"
-    results = []
-    for cycle_id in query_ids:
-        arguments: dict[str, Any] = {"id_ciclo": cycle_id}
-        if tool_name == "licoes_perguntar":
-            arguments["pergunta"] = question
-        results.append(call_acta_tool(tool_name, arguments))
-    if len(results) > 1:
-        return "Resultados por ciclo: " + json.dumps(
-            dict(zip(query_ids, results, strict=True)), ensure_ascii=False, default=str
+    with mcp_discovered_cycle_scope_context():
+        cycle_ids = _ids_ciclo_estado(estado)
+        user_message = _ultima_mensagem(estado, "human")
+        question = _texto_mensagem(user_message).strip() if user_message else ""
+        normalized = _normalizar_texto(question)
+        query_ids = _ciclos_para_consulta(estado)
+        if not query_ids:
+            search = call_acta_tool(
+                "ciclos_buscar_por_descricao",
+                {"termo": question, "limit": 5},
+            )
+            candidates = search.get("ciclos", []) if isinstance(search, dict) else []
+            if not candidates:
+                return "Não encontrei um ciclo compatível. Descreva o ciclo pelo título ou assunto."
+            if len(candidates) > 1:
+                options = [
+                    f"- {item.get('titulo') or 'Ciclo sem título'}: "
+                    f"{str(item.get('descricao') or 'Sem descrição.')[:240]}"
+                    for item in candidates
+                    if isinstance(item, dict)
+                ]
+                return "Encontrei mais de um ciclo possível. Qual deles você quer?\n" + "\n".join(options)
+            candidate_id = candidates[0].get("id_ciclo") if isinstance(candidates[0], dict) else None
+            if not isinstance(candidate_id, int) or candidate_id <= 0:
+                return "Não consegui identificar o ciclo. Descreva-o pelo título ou assunto."
+            cycle_ids = [candidate_id]
+            query_ids = [candidate_id]
+
+        id_ciclo = query_ids[0] if query_ids else cycle_ids[0]
+        if any(
+            marker in normalized
+            for marker in ("crie uma licao", "criar uma licao", "registre uma licao", "gere uma licao")
+        ):
+            with licoes_context(id_ciclo=id_ciclo):
+                return _executar_agente(
+                    licoes_agent,
+                    estado,
+                    "Crie uma lição aprendida para o ciclo ativo.",
+                )
+        tool_name = (
+            "licoes_resumir"
+            if any(marker in normalized for marker in ("resuma", "resumo das licoes", "sintetize as licoes"))
+            else "licoes_perguntar"
         )
-    result = results[0]
-    if isinstance(result, dict):
-        if result.get("status") == "sem_evidencia":
-            return "Não encontrei lições com evidências suficientes para responder essa pergunta."
-        if result.get("status") == "sem_licoes":
-            return "Ainda não há lições aprendidas registradas para este ciclo."
-        text = str(result.get("resposta") or result.get("resumo") or "").strip()
-        if text:
-            return text
-    return "Não foi possível consultar as lições aprendidas deste ciclo no momento."
+        results = []
+        for cycle_id in query_ids:
+            arguments: dict[str, Any] = {"id_ciclo": cycle_id}
+            if tool_name == "licoes_perguntar":
+                arguments["pergunta"] = question
+            results.append(call_acta_tool(tool_name, arguments))
+        if len(results) > 1:
+            return "Resultados por ciclo: " + json.dumps(
+                dict(zip(query_ids, results, strict=True)), ensure_ascii=False, default=str
+            )
+        result = results[0]
+        if isinstance(result, dict):
+            if result.get("status") == "sem_evidencia":
+                return "Não encontrei lições com evidências suficientes para responder essa pergunta."
+            if result.get("status") == "sem_licoes":
+                return "Ainda não há lições aprendidas registradas para este ciclo."
+            text = str(result.get("resposta") or result.get("resumo") or "").strip()
+            if text:
+                return text
+        return "Não foi possível consultar as lições aprendidas deste ciclo no momento."
 
 
 # Estes são executores comuns, não nós do LangGraph.
@@ -410,19 +462,6 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
         "Exemplos: 'Gere um resumo do ciclo'"
     ),
 }
-CICLO_ESPECIALISTAS = frozenset(
-    {
-        "ciclo",
-        "licoes",
-        "tarefas",
-        "colaboradores",
-        "formularios",
-        "indicadores",
-        "relatorios",
-    }
-)
-
-
 def no_guardrail_entrada(estado: Estado) -> dict:
     user_message = _ultima_mensagem(estado, "human")
     if user_message is None:
@@ -591,22 +630,6 @@ def no_roteador(estado: Estado) -> dict:
         }
 
     cycle_ids = _ids_ciclo_estado(estado)
-    if CICLO_ESPECIALISTAS.intersection(selected) and not cycle_ids:
-        return {
-            "rota": "fim",
-            "resposta_final": "Informe o ciclo que devo consultar para responder sobre dados do ACTA.",
-        }
-    if (
-        len(cycle_ids) > 1
-        and estado.get("ciclo_ativo") is None
-        and CICLO_ESPECIALISTAS.intersection(selected)
-        and routing.choices["escopo_ciclos"].choice == "ativo"
-    ):
-        return {
-            "rota": "fim",
-            "resposta_final": "Qual ciclo devo consultar? Se quiser uma resposta comparativa, peça para comparar os ciclos.",
-        }
-
     return {
         "rota": "especialistas",
         "especialistas": selected,
