@@ -218,9 +218,20 @@ def test_cycle_query_without_scope_does_not_call_mcp_tools(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     calls = []
     monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_saida",
+        lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer},
+    )
     _set_jev(monkeypatch, selected=("ciclo",))
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *args, **kwargs: calls.append((args, kwargs)))
-    monkeypatch.setattr(state_module, "ciclo_agent", FakeAgent("Não informado"))
+    cycle_agent = FakeAgent("Informe o ciclo pelo título ou descrição.")
+    monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
+    monkeypatch.setitem(
+        state_module.REGISTRO_ESPECIALISTAS,
+        "ciclo",
+        lambda state: state_module._executar_agente(cycle_agent, state),
+    )
 
     answer = get_response("Qual é a situação do ciclo?", f"teste::{uuid4()}")
 
