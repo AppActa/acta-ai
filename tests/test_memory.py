@@ -54,7 +54,7 @@ def test_summary_and_inferred_memories_are_consolidated_in_one_llm_call(monkeypa
                 )
             )
 
-    monkeypatch.setattr(state_module, "llm_fast", FakeLLM())
+    monkeypatch.setattr(state_module, "llm", FakeLLM())
     state_module.consolidar_memoria("session-1")
 
     assert calls[0][0] == "resumo"

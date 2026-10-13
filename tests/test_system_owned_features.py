@@ -14,7 +14,7 @@ def test_memory_facade_uses_system_service_instead_of_mcp(monkeypatch):
     class MemoryService:
         def garantir_sessao(self, context, *, session_id, metadata=None):
             calls.append((context.usuario_id, context.empresa_id, session_id, metadata))
-            return {"status": "ok", "session_id": session_id}
+            return None
 
     monkeypatch.setattr(memory_client, "get_memory_service", lambda: MemoryService(), raising=False)
     monkeypatch.setattr(
@@ -33,7 +33,7 @@ def test_memory_facade_uses_system_service_instead_of_mcp(monkeypatch):
 def test_skill_facade_uses_system_service_instead_of_mcp(monkeypatch):
     class SkillsService:
         def obter(self, context, *, nome):
-            return {"status": "ok", "skill": {"slug": nome, "objetivo": "Resumir"}}
+            return {"slug": nome, "objetivo": "Resumir"}
 
     monkeypatch.setattr(skill_client, "get_skills_service", lambda: SkillsService(), raising=False)
     monkeypatch.setattr(
@@ -63,7 +63,7 @@ def test_faq_agent_uses_mcp_tool(monkeypatch):
     )
     monkeypatch.setattr(
         agent_tools,
-        "llm_fast",
+        "llm",
         Mock(invoke=lambda prompt: Mock(content=f"Resposta baseada em {prompt}")),
     )
 
@@ -75,23 +75,19 @@ def test_faq_agent_uses_mcp_tool(monkeypatch):
 
 def test_all_memory_facade_operations_call_the_system_service(monkeypatch):
     service = Mock()
-    service.garantir_sessao.return_value = {"status": "ok"}
-    service.salvar_mensagem.return_value = {"status": "ok", "salva": True}
-    service.obter_contexto.return_value = {"status": "ok", "contexto": "contexto"}
-    service.material_resumo.return_value = {"status": "ok", "deve_resumir": True}
-    service.encerrar_sessao.return_value = {"status": "ok", "encerrada": True}
-    service.listar_chats.return_value = {"status": "ok", "chats": [{"session_id": "s"}]}
-    service.atualizar_resumo.return_value = {"status": "ok"}
-    service.registrar.return_value = {"status": "ok", "salva": True}
-    service.buscar.return_value = {"status": "ok", "memorias": [{"_id": "searched"}]}
-    service.listar.return_value = {"status": "ok", "memorias": [{"_id": "m"}]}
-    service.excluir.return_value = {"status": "ok", "excluida": True}
-    service.obter_consentimento.return_value = {
-        "status": "ok", "consentimento": {"modo": "automatica"}
-    }
-    service.configurar_consentimento.return_value = {
-        "status": "ok", "consentimento": {"modo": "desativado"}
-    }
+    service.garantir_sessao.return_value = None
+    service.salvar_mensagem.return_value = None
+    service.obter_contexto.return_value = {"contexto": "contexto"}
+    service.material_resumo.return_value = {"deve_resumir": True}
+    service.encerrar_sessao.return_value = True
+    service.listar_chats.return_value = [{"session_id": "s"}]
+    service.atualizar_resumo.return_value = None
+    service.registrar.return_value = True
+    service.buscar.return_value = [{"_id": "searched"}]
+    service.listar.return_value = [{"_id": "m"}]
+    service.excluir.return_value = None
+    service.obter_consentimento.return_value = {"modo": "automatica"}
+    service.configurar_consentimento.return_value = {"modo": "desativado"}
     monkeypatch.setattr(memory_client, "get_memory_service", lambda: service)
 
     with mcp_acta_client.mcp_request_context(usuario_id=7, empresa_id=3):
@@ -131,10 +127,10 @@ def test_all_memory_facade_operations_call_the_system_service(monkeypatch):
 
 def test_skill_crud_facades_use_system_service(monkeypatch):
     service = Mock()
-    service.criar.return_value = {"status": "ok", "skill": {"slug": "resumo"}}
-    service.listar.return_value = {"status": "ok", "skills": [{"slug": "resumo"}]}
-    service.obter.return_value = {"status": "ok", "skill": {"slug": "resumo"}}
-    service.excluir.return_value = {"status": "ok", "excluida": True}
+    service.criar.return_value = {"slug": "resumo"}
+    service.listar.return_value = [{"slug": "resumo"}]
+    service.obter.return_value = {"slug": "resumo"}
+    service.excluir.return_value = {"excluida": True}
     monkeypatch.setattr(skill_client, "get_skills_service", lambda: service)
     markdown = "# Resumo\n\n# objetivo\n\nResumir resultados.\n\n# regras\n\nUsar tópicos."
 

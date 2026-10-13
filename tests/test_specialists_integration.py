@@ -20,7 +20,6 @@ SPECIALIST_CASES = [
     ("formularios", "Resuma as respostas dos formulários do ciclo 1 e destaque padrões."),
     ("indicadores", "A meta principal do ciclo 1 foi atingida? Compare base e alvo."),
     ("relatorios", "Gere um resumo executivo do ciclo 1 com riscos e próximos passos."),
-    ("predicoes", "Qual é a previsão de atraso do ciclo 1?"),
 ]
 
 EXPECTED_TERMS = {
@@ -32,12 +31,11 @@ EXPECTED_TERMS = {
     "formularios": ("formulário", "resposta", "padrão", "sintoma"),
     "indicadores": ("meta", "indicador", "base", "alvo", "ating"),
     "relatorios": ("resumo", "ciclo", "risco", "executivo"),
-    "predicoes": ("previsão", "histórico", "dados", "amostra"),
 }
 
 pytestmark = pytest.mark.skipif(
     not _enabled("ACTA_RUN_SPECIALISTS_INTEGRATION"),
-    reason="Defina ACTA_RUN_SPECIALISTS_INTEGRATION=1 com MCP, bancos e NVIDIA ativos.",
+    reason="Defina ACTA_RUN_SPECIALISTS_INTEGRATION=1 com MCP, bancos e OPENAI_API_KEY ativos.",
 )
 
 
@@ -45,7 +43,6 @@ pytestmark = pytest.mark.skipif(
 def test_specialist_returns_real_answer(specialist: str, question: str) -> None:
     state = {
         "messages": [HumanMessage(content=question)],
-        "agentes_chamados": [],
         "rota": "especialistas",
         "especialistas": [specialist],
         "respostas_especialistas": [],
@@ -57,9 +54,9 @@ def test_specialist_returns_real_answer(specialist: str, question: str) -> None:
     }
 
     with mcp_request_context(usuario_id=1, empresa_id=1):
-        responses, called = executar_especialistas(state)
+        responses = executar_especialistas(state)
 
-    assert called == [specialist]
+    assert [item["especialista"] for item in responses] == [specialist]
     assert len(responses) == 1
     answer = responses[0]["resposta"].strip()
     assert len(answer) > 20
@@ -89,7 +86,6 @@ def test_multiple_specialists_return_real_answers() -> None:
         "messages": [
             HumanMessage(content="Qual é a situação do ciclo 1 e quais tarefas estão atrasadas?")
         ],
-        "agentes_chamados": [],
         "rota": "especialistas",
         "especialistas": specialists,
         "respostas_especialistas": [],
@@ -101,9 +97,8 @@ def test_multiple_specialists_return_real_answers() -> None:
     }
 
     with mcp_request_context(usuario_id=1, empresa_id=1):
-        responses, called = executar_especialistas(state)
+        responses = executar_especialistas(state)
 
-    assert called == specialists
     assert [item["especialista"] for item in responses] == specialists
     assert all(item["resposta"].strip() for item in responses)
     assert all(item["evidencias"] for item in responses)

@@ -36,23 +36,6 @@ _KEYWORDS_DADOS_INTERNOS = [
     "lista de clientes",
     "credenciais",
 ]
-_PROMPT_GUARDRAIL = """\
-Você é um classificador de segurança de um aplicativo gerenciador de ciclos PDCA.
-Classifique a mensagem em UMA categoria. Responda SOMENTE:
-
-CATEGORIA: [categoria]
-JUSTIFICATIVA: [uma linha]
-
-Categorias:
-APROVADO        - mensagem legítima sobre o ciclo PDCA (informativa) ou operações sobre o aplicativo
-OFENSIVO        - xingamentos, assédio, discurso de ódio
-PERIGOSO        - instruções que causam dano físico, psicológico ou coletivo
-ILICITO         - pedido de auxílio para atividades ilegais ou fraudulentas
-POLITICO        - opiniões ou debates políticos, partidos, eleições
-
-Mensagem: {mensagem}
-"""
-
 _RESPOSTAS_BLOQUEIO = {
     "OFENSIVO": (
         "conteudo_ofensivo",
@@ -65,14 +48,3 @@ _RESPOSTAS_BLOQUEIO = {
         "Não me envolvo em temas políticos. Posso te ajudar com o funcionamento do ACTA, dúvidas sobre o ciclo PDCA ou operações no aplicativo.",
     ),
 }
-
-_PROMPT_COMPLIANCE = """\
-Você é um revisor de compliance de um aplicativo gerenciador de ciclos PDCA. Sua função é revisar a resposta de um especialista antes de entregar ao usuário final, garantindo que não haja informações pessoais, sensíveis ou que violem as políticas de uso do aplicativo.
-Responda SOMENTE:
-STATUS: APROVADO ou CORRIGIDO
-RESPOSTA:
-[texto final]
-
-Resposta para revisar:
-{resposta}
-"""

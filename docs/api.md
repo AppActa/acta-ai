@@ -46,28 +46,51 @@ mensagens. Portanto, uma conversa vazia não é criada, resumida nem listada.
 {
   "message": "Quais tarefas estão atrasadas?",
   "session_id": "uuid",
-  "id_ciclo": 12,
   "usuario_id": 1,
-  "empresa_id": 1
+  "empresa_id": 1,
+  "id_ciclo": [12, 15],
+  "ciclo_ativo": 12
 }
 ```
 
-`id_ciclo` é opcional. A resposta contém o mesmo `session_id` e o campo `resposta`.
-Mensagens de usuário e assistente são persistidas pelo fluxo da conversa.
+`id_ciclo` aceita o formato legado de um inteiro ou uma lista opcional com até 20 IDs
+positivos. O inteiro legado é normalizado para lista. IDs duplicados são removidos
+mantendo a ordem da primeira ocorrência. `ciclo_ativo` também é opcional e, quando
+informado, precisa constar na lista; ele é consultado primeiro. Quando não há ID de
+ciclo, o agente pode buscar ciclos acessíveis pelo título ou descrição. Se houver um
+único resultado compatível, usa esse ciclo nas consultas; se houver várias opções,
+pede ao usuário que escolha sem expor os IDs. Perguntas comparativas usam chamadas
+MCP separadas para cada ID permitido. Cada chamada continua sendo autorizada pelo MCP.
+A resposta contém o mesmo `session_id` e o campo `resposta`. Mensagens de usuário e
+assistente são persistidas pelo fluxo da conversa.
 
 ### Listar conversas
 
 `GET /listar_chats?usuario_id=1&empresa_id=1&limit=50`
 
 Retorna somente conversas não vazias pertencentes ao usuário dentro da empresa. Cada
-item inclui o `session_id`, estado, contagem de mensagens e datas de atividade.
-O limite é aplicado pelo MCP, entre 1 e 100.
+item inclui `session_id`, `titulo`, estado, contagem de mensagens e datas de atividade.
+O título é derivado da primeira mensagem do usuário, limitado a 80 caracteres; sessões
+antigas sem título são preenchidas ao serem listadas. O limite é aplicado pelo MCP,
+entre 1 e 100.
+
+### Listar mensagens de uma conversa
+
+`GET /chats/{session_id}/mensagens?usuario_id=1&empresa_id=1&limit=30`
+
+Retorna as mensagens mais recentes da sessão em ordem cronológica. `limit` é opcional,
+usa 30 por padrão e aceita valores entre 1 e 100. A sessão precisa pertencer ao
+usuário e à empresa informados; uma sessão inexistente retorna 404.
 
 ### Áudio
 
-`POST /chat/audio` recebe `multipart/form-data` com `audio`, `session_id`,
-`usuario_id`, `empresa_id` e `id_ciclo` opcional. O arquivo não pode exceder 25 MB.
-A resposta inclui a transcrição e a resposta do chat.
+`POST /chat/audio` recebe `multipart/form-data` com `audio`,
+`session_id`, `usuario_id`, `empresa_id`, um `id_ciclo`
+legado ou até 20 campos `id_ciclo`, e
+`ciclo_ativo` opcional. O ciclo legado é normalizado para lista; IDs duplicados são
+removidos mantendo a ordem da primeira ocorrência. O ciclo ativo, se informado,
+precisa estar na lista e será priorizado. O arquivo não pode exceder 25 MB. A resposta
+inclui a transcrição e a resposta do chat.
 
 ## Memória e consentimento
 

@@ -6,9 +6,8 @@ import socket
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from dataclasses import dataclass
-from time import perf_counter
 from uuid import uuid4
 
 from mcp import ClientSession
@@ -22,7 +21,6 @@ from config import (
     ACTA_MCP_URL,
     ACTA_MCP_USUARIO_ID,
 )
-from observability import observed_span, record_mcp_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +48,41 @@ _tool_evidence: ContextVar[list[dict[str, object]] | None] = ContextVar(
     "acta_ai_mcp_tool_evidence",
     default=None,
 )
+_cycle_scope: ContextVar[frozenset[int] | None] = ContextVar(
+    "acta_ai_cycle_scope",
+    default=None,
+)
+_discovered_cycle_scope: ContextVar[set[int] | None] = ContextVar(
+    "acta_ai_discovered_cycle_scope",
+    default=None,
+)
+
+
+@contextmanager
+def mcp_cycle_scope_context(cycle_ids: list[int]) -> Iterator[None]:
+    """Limita as chamadas MCP desta rodada aos ciclos recebidos pelo chatbot."""
+
+    token = _cycle_scope.set(frozenset(cycle_ids))
+    discovered_token = _discovered_cycle_scope.set(set())
+    try:
+        yield
+    finally:
+        _discovered_cycle_scope.reset(discovered_token)
+        _cycle_scope.reset(token)
+
+
+@contextmanager
+def mcp_discovered_cycle_scope_context() -> Iterator[None]:
+    """Inicializa o escopo descoberto caso a chamada não esteja dentro de uma requisição."""
+
+    token = None
+    if _discovered_cycle_scope.get() is None:
+        token = _discovered_cycle_scope.set(set())
+    try:
+        yield
+    finally:
+        if token is not None:
+            _discovered_cycle_scope.reset(token)
 
 
 @contextmanager
@@ -109,11 +142,10 @@ def mcp_request_context(
         trace_id=trace_id or str(uuid4()),
     )
     token = _request_context.set(context)
-    with mcp_tool_cache_context():
-        try:
-            yield context
-        finally:
-            _request_context.reset(token)
+    try:
+        yield context
+    finally:
+        _request_context.reset(token)
 
 
 def _current_context() -> MCPRequestContext:
@@ -256,7 +288,7 @@ def _run_async_in_sync_context(tool_name: str, arguments: dict) -> dict | str:
         except Exception as exc:  # noqa: BLE001 - propagado para a thread chamadora
             error.append(exc)
 
-    thread = threading.Thread(target=runner, daemon=True)
+    thread = threading.Thread(target=copy_context().run, args=(runner,), daemon=True)
     thread.start()
     thread.join()
     if error:
@@ -264,19 +296,40 @@ def _run_async_in_sync_context(tool_name: str, arguments: dict) -> dict | str:
     return result[0]
 
 
+def _registrar_ciclos_descobertos(result: dict | str) -> None:
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return
+    discovered_ids = {
+        ciclo.get("id_ciclo")
+        for ciclo in result.get("ciclos", [])
+        if isinstance(ciclo, dict)
+        and isinstance(ciclo.get("id_ciclo"), int)
+        and ciclo["id_ciclo"] > 0
+    }
+    active_scope = _discovered_cycle_scope.get()
+    if active_scope is None:
+        _discovered_cycle_scope.set(discovered_ids)
+    else:
+        active_scope.update(discovered_ids)
+
+
 def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     """Executa uma tool no MCP ACTA preservando resultado estruturado."""
-    started = perf_counter()
     sanitized = {
         key: value for key, value in arguments.items() if value is not None and key != "id_empresa"
     }
-    cache = (
-        None
-        if tool_name
-        in {
-        }
-        else _request_cache.get()
-    )
+    allowed_cycles = _cycle_scope.get()
+    discovered_cycles = _discovered_cycle_scope.get() or set()
+    is_cycle_discovery = tool_name == "ciclos_buscar_por_descricao"
+    if (
+        allowed_cycles is not None
+        and tool_name not in {"faq_retriever", "ciclos_buscar_por_descricao"}
+        and sanitized.get("id_ciclo") not in (allowed_cycles | discovered_cycles)
+    ):
+        result = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
+        _record_tool_evidence(tool_name, sanitized, result, cached=False)
+        return result
+    cache = _request_cache.get()
     cache_key = json.dumps(
         [tool_name, sanitized],
         sort_keys=True,
@@ -286,42 +339,24 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     if cache is not None and cache_key in cache:
         logger.debug("Cache MCP da requisição: hit em %s", tool_name)
         cached_result = cache[cache_key]
+        if is_cycle_discovery:
+            _registrar_ciclos_descobertos(cached_result)
         _record_tool_evidence(tool_name, sanitized, cached_result, cached=True)
-        record_mcp_tool_call(
-            tool_name,
-            (perf_counter() - started) * 1000,
-            status="ok",
-            cached=True,
-        )
         return cached_result
 
-    with observed_span("acta_ai.mcp_tool", {"acta.mcp.tool": tool_name}):
-        try:
-            result = _run_async_in_sync_context(tool_name, sanitized)
-        except Exception as exc:
-            _record_tool_evidence(
-                tool_name,
-                sanitized,
-                {"status": "error", "tipo": type(exc).__name__},
-                cached=False,
-            )
-            record_mcp_tool_call(
-                tool_name,
-                (perf_counter() - started) * 1000,
-                status="error",
-                cached=False,
-            )
-            raise
+    try:
+        result = _run_async_in_sync_context(tool_name, sanitized)
+    except Exception as exc:
+        _record_tool_evidence(
+            tool_name,
+            sanitized,
+            {"status": "error", "tipo": type(exc).__name__},
+            cached=False,
+        )
+        raise
     if cache is not None:
         cache[cache_key] = result
+    if is_cycle_discovery:
+        _registrar_ciclos_descobertos(result)
     _record_tool_evidence(tool_name, sanitized, result, cached=False)
-    status = "ok"
-    if isinstance(result, dict):
-        status = str(result.get("status", "ok"))
-    record_mcp_tool_call(
-        tool_name,
-        (perf_counter() - started) * 1000,
-        status=status,
-        cached=False,
-    )
     return result

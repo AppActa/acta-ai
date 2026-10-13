@@ -54,9 +54,3 @@ Ele melhora a continuidade da rodada, mas não é a fonte persistente. A memóri
 durável fica no ACTA AI: MongoDB é a fonte oficial e Qdrant, quando configurado, é o
 índice semântico.
 Consulte [Memória](memoria.md) para o ciclo completo.
-
-## Observabilidade
-
-Quando habilitada pelas variáveis `ACTA_OBSERVABILITY_*`, a API instrumenta o
-FastAPI e registra spans para chat, pipeline e chamadas MCP. As chaves de telemetria
-devem ficar somente no `.env` ou no gerenciador de segredos da plataforma.

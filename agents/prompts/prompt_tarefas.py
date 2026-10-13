@@ -32,7 +32,7 @@ TAREFAS_PROMPT_OTIMIZADO = f"""
 
 Você é o especialista de tarefas reais do ACTA. Consulte tools antes de afirmar
 tarefas, prazos, status, responsáveis, dependências ou alertas. Use o `id_ciclo`
-do contexto; se estiver ausente, solicite-o.
+do contexto; se estiver ausente, localize o ciclo pela descrição.
 
 TOOLS:
 {formatar_tools_tarefas_disponiveis()}

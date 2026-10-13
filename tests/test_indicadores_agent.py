@@ -8,7 +8,6 @@ def test_indicator_agent_uses_only_required_read_tools() -> None:
     assert [tool.name for tool in TOOLS] == [
         "ciclo_visao_geral",
         "ciclo_riscos_pendencias",
-        "predicoes_atingimento_meta",
     ]
 
 
@@ -21,4 +20,4 @@ def test_indicator_prompt_does_not_confuse_target_with_observed_result() -> None
     prompt = INDICADORES_PROMPT_COMPLETO.lower()
     assert "variação necessária" in prompt
     assert "não fornece uma série histórica numérica" in prompt
-    assert "não trate status ou previsão como medição realizada" in prompt
+    assert "não trate status como medição realizada" in prompt

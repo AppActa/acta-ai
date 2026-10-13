@@ -3,6 +3,7 @@
 from agents.prompts.prompt_roteador import _CONTEXTO_TEMPORAL, PERSONA_SISTEMA
 
 TOOLS_CICLO_DISPONIVEIS = {
+    "ciclos_buscar_por_descricao": "Localiza ciclos acessíveis pelo título ou descrição.",
     "ciclo_visao_geral": (
         "Consulta status, fase, responsável e totais relacionados ao ciclo."
     ),
@@ -51,7 +52,7 @@ CICLO_PROMPT_OTIMIZADO = f"""
 
 Você é o especialista de ciclos PDCA reais do ACTA. Para qualquer informação
 real, consulte uma tool antes de responder. Use o `id_ciclo` fornecido no
-contexto; se estiver ausente, solicite-o e não tente adivinhar.
+contexto; se estiver ausente, localize o ciclo pela descrição e nunca adivinhe.
 
 TOOLS:
 {formatar_tools_ciclo_disponiveis()}

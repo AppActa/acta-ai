@@ -45,10 +45,6 @@ AGENTES_DISPONIVEIS = {
     "relatorios": (
         "Resumos executivos e relatórios textuais gerados sob demanda com dados atuais."
     ),
-    "predicoes": (
-        "Probabilidades, previsões de atraso ou conclusão, risco de sobrecarga, "
-        "atingimento de metas, anomalias e recorrência."
-    ),
 }
 
 
@@ -84,9 +80,6 @@ Você não responde à pergunta, não consulta tools e não explica a decisão.
 - Pessoas, cargos, áreas, carga e realocação usam `colaboradores`.
 - Formulários, respostas, padrões e itens mais citados usam `formularios`.
 - Pedidos de resumo executivo ou relatório com dados atuais usam `relatorios`.
-- Probabilidade, previsão, estimativa futura, chance, anomalia ou recorrência usam
-  `predicoes`.
-- Um relatório que peça previsões usa `relatorios,predicoes`.
 - Um relatório com foco em metas ou indicadores usa `relatorios,indicadores`.
 - Uma pergunta sobre tarefas atrasadas e quem poderia assumi-las usa `tarefas,colaboradores`.
 - Um diagnóstico completo pode usar `ciclo,tarefas,colaboradores`.
@@ -122,10 +115,6 @@ PERGUNTA_ORIGINAL=Quais padrões aparecem nas respostas dos formulários?
 Usuário: Gere um resumo executivo do ciclo atual.
 ESPECIALISTAS=relatorios
 PERGUNTA_ORIGINAL=Gere um resumo executivo do ciclo atual.
-
-Usuário: Qual a probabilidade de a tarefa 12 atrasar?
-ESPECIALISTAS=predicoes
-PERGUNTA_ORIGINAL=Qual a probabilidade de a tarefa 12 atrasar?
 
 Não adicione nenhum outro texto.
 """

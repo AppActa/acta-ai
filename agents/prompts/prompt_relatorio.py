@@ -27,8 +27,8 @@ TOOLS:
 {formatar_tools_relatorios()}
 
 Para produzir um relatório com os dados atuais, use `relatorios_contexto_ciclo`.
-Use o `id_ciclo` fornecido no contexto; se estiver ausente, solicite-o e não
-adivinhe. Relatórios anteriores não estão disponíveis para consulta por este agente.
+Use o `id_ciclo` fornecido no contexto; se estiver ausente, localize o ciclo pela
+descrição e não adivinhe. Relatórios anteriores não estão disponíveis para consulta por este agente.
 
 Baseie cada afirmação nas evidências retornadas. Diferencie fato, risco e
 recomendação. Não invente indicadores, percentuais, responsáveis ou conclusões.

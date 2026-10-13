@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 
+from agents.helpers.skills.compiler import parse_skill_markdown
+from agents.helpers.skills.repository import SkillsRepository
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.skills.compiler import parse_skill_markdown
-from utils.skills.repository import SkillsRepository
 
 
 class Cursor:

@@ -3,7 +3,7 @@
 import re
 import unicodedata
 
-from utils.skills.schemas import SkillDefinition
+from agents.helpers.skills.schemas import SkillDefinition
 
 _ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
 _HEADING = re.compile(r"^#\s*([^#].*?)\s*$")

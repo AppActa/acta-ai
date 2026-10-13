@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import pytest
 from qdrant_client import models
 
+from agents.helpers.errors import AuthorizationError, NotFoundError
+from agents.helpers.memory import repository as memory_repository
+from agents.helpers.memory.repository import MemoryRepository
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.errors import AuthorizationError, NotFoundError
-from utils.memory import repository as memory_repository
-from utils.memory.repository import MemoryRepository
 
 CONTEXT = RequestContext(
     usuario_id=7,
@@ -195,6 +195,40 @@ def test_message_stays_in_mongo_without_configured_qdrant() -> None:
     assert repository.messages.inserted[0]["indice_status"] == "pendente"
 
 
+def test_first_user_message_sets_session_title_from_sanitized_content() -> None:
+    repository = _repository(None)
+    repository.message_retention_days = 90
+    repository.ensure_session = lambda *_args, **_kwargs: {}  # type: ignore[method-assign]
+
+    repository.add_message(
+        CONTEXT,
+        session_id="session-1",
+        role="usuario",
+        content="  Minha   primeira pergunta sobre 123.456.789-00  ",
+        agent=None,
+        metadata={},
+    )
+
+    title_updates = [
+        (args[0], args[1])
+        for args, _kwargs in repository.sessions.updates
+        if args[1].get("$set", {}).get("titulo")
+    ]
+    assert title_updates
+    query, update = title_updates[-1]
+    assert query == {
+        "session_id": "session-1",
+        "usuario_id": 7,
+        "empresa_id": 3,
+        "$or": [
+            {"titulo": {"$exists": False}},
+            {"titulo": None},
+            {"titulo": ""},
+        ],
+    }
+    assert update["$set"]["titulo"] == "Minha primeira pergunta sobre [CPF OMITIDO]"
+
+
 def test_memory_is_kept_in_mongo_when_qdrant_indexing_fails() -> None:
     class FailingQdrant(FakeQdrant):
         def upsert(self, **_: object) -> None:
@@ -334,6 +368,57 @@ def test_session_context_and_summary_material_enforce_owner_and_order() -> None:
     assert repository.messages.find_calls[-1][0][0]["criada_em"]["$gt"]
 
 
+def test_list_messages_returns_latest_messages_in_chronological_order_and_checks_owner() -> None:
+    repository = _repository(None)
+    repository.sessions.find_one_result = {
+        "session_id": "session-1",
+        "usuario_id": 7,
+        "empresa_id": 3,
+    }
+    # Mongo returns newest first before the repository reverses the limited page.
+    repository.messages.documents = [
+        {"_id": "m3", "session_id": "session-1", "content": "terceira"},
+        {"_id": "m2", "session_id": "session-1", "content": "segunda"},
+        {"_id": "m1", "session_id": "session-1", "content": "primeira"},
+    ]
+
+    messages = repository.list_messages(CONTEXT, "session-1", limit=2)
+
+    assert [message["_id"] for message in messages] == ["m2", "m3"]
+    assert repository.messages.find_calls[0][0][0] == {
+        "session_id": "session-1",
+        "usuario_id": 7,
+        "empresa_id": 3,
+    }
+
+
+def test_list_chats_backfills_titles_for_existing_sessions() -> None:
+    repository = _repository(None)
+    repository.sessions.documents = [
+        {
+            "session_id": "legacy-session",
+            "usuario_id": 7,
+            "empresa_id": 3,
+            "total_mensagens": 2,
+        }
+    ]
+    repository.sessions.find_one_result = repository.sessions.documents[0]
+    repository.messages.documents = [
+        {
+            "session_id": "legacy-session",
+            "usuario_id": 7,
+            "empresa_id": 3,
+            "role": "usuario",
+            "content": "Primeira pergunta antiga",
+        }
+    ]
+
+    chats = repository.list_chats(CONTEXT, limit=10)
+
+    assert chats[0]["titulo"] == "Primeira pergunta antiga"
+    assert repository.sessions.updates[-1][0][1]["$set"]["titulo"] == "Primeira pergunta antiga"
+
+
 def test_existing_session_rejects_a_different_owner() -> None:
     repository = _repository(None)
     repository.sessions.find_one_result = {
@@ -395,6 +480,83 @@ def test_delete_memory_soft_deletes_and_removes_vector() -> None:
 
     repository.memories.matched_count = 0
     assert repository.delete_memory(CONTEXT, "missing") is False
+
+
+def test_delete_memory_remains_hidden_and_cleanup_retries_failed_qdrant_delete(
+    monkeypatch,
+) -> None:
+    class RecoveringQdrant(FakeQdrant):
+        fail_delete = True
+
+        def delete(self, collection_name: str, **kwargs: object) -> None:
+            if self.fail_delete:
+                raise RuntimeError("Qdrant unavailable")
+            super().delete(collection_name, **kwargs)
+
+    class TrackingMemories(FakeCollection):
+        def update_one(self, query: dict, update: dict, **kwargs: object):
+            self.updates.append(((query, update), kwargs))
+            for document in self.documents:
+                if all(document.get(key) == value for key, value in query.items()):
+                    document.update(update.get("$set", {}))
+                    return SimpleNamespace(matched_count=1)
+            return SimpleNamespace(matched_count=0)
+
+        def update_many(self, query: dict, update: dict) -> None:
+            self.update_many_calls.append(((query, update), {}))
+            ids = query.get("_id", {}).get("$in", [])
+            for document in self.documents:
+                if document.get("_id") in ids:
+                    document.update(update.get("$set", {}))
+
+        def find(self, query: dict | None = None, *args: object, **kwargs: object):
+            self.find_calls.append(((query or {}, *args), kwargs))
+            query = query or {}
+
+            def matches(document: dict, conditions: dict) -> bool:
+                for key, expected in conditions.items():
+                    if key == "$or":
+                        if not any(matches(document, option) for option in expected):
+                            return False
+                    elif isinstance(expected, dict):
+                        if "$in" in expected and document.get(key) not in expected["$in"]:
+                            return False
+                        if "$lte" in expected and not document.get(key) <= expected["$lte"]:
+                            return False
+                        if "$ne" in expected and document.get(key) == expected["$ne"]:
+                            return False
+                    elif document.get(key) != expected:
+                        return False
+                return True
+
+            return FakeCursor([doc for doc in self.documents if matches(doc, query)])
+
+    monkeypatch.setattr(memory_repository, "gerar_embedding", lambda _: [0.25] * 768)
+    qdrant = RecoveringQdrant()
+    repository = _repository(qdrant)
+    repository.messages = FakeCollection([])
+    repository.memories = TrackingMemories(
+        [
+            {
+                "_id": "memory-1",
+                "usuario_id": CONTEXT.usuario_id,
+                "empresa_id": CONTEXT.empresa_id,
+                "status": "ativa",
+                "expira_em": None,
+            }
+        ]
+    )
+
+    assert repository.delete_memory(CONTEXT, "memory-1") is True
+    assert repository.memories.documents[0]["status"] == "excluida_indice_pendente"
+    assert repository.list_memories(CONTEXT, tipo=None, limit=10) == []
+    assert repository.semantic_search(CONTEXT, "memória removida", limit=10) == []
+
+    qdrant.fail_delete = False
+    repository.cleanup_expired(CONTEXT)
+
+    assert qdrant.deletions == ["memoria_usuario"]
+    assert repository.memories.documents[0]["status"] == "excluida"
 
 
 def test_index_creation_and_successful_message_vector_sync(monkeypatch) -> None:

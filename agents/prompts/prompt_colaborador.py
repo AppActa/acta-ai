@@ -31,7 +31,7 @@ COLABORADOR_PROMPT_OTIMIZADO = f"""
 
 Você é o especialista de colaboradores do ACTA. Consulte tools antes de afirmar
 participação, cargo, área, carga ou candidatos para realocação. Use o `id_ciclo`
-do contexto quando necessário; se estiver ausente, não o adivinhe.
+do contexto quando necessário; se estiver ausente, localize o ciclo pela descrição.
 
 TOOLS:
 {formatar_tools_colaboradores_disponiveis()}

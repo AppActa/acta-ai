@@ -2,12 +2,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from agents.helpers.memory.service import MemoryService
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
-from utils.memory.service import MemoryService
 
 
 class FakeMemoryRepository:
     def __init__(self) -> None:
+        self.qdrant = None
         self.consent = {"modo": "somente_explicitas", "retencao_dias": None}
         self.memories = []
         self.summary = ""
@@ -21,6 +22,8 @@ class FakeMemoryRepository:
         ]
         self.chats = []
         self.last_list_limit = None
+        self.messages = []
+        self.last_message_limit = None
         self.semantic_queries = []
 
     def ensure_session(self, context, session_id, metadata=None):
@@ -44,6 +47,10 @@ class FakeMemoryRepository:
     def list_chats(self, context, limit):
         self.last_list_limit = limit
         return self.chats
+
+    def list_messages(self, context, session_id, limit):
+        self.last_message_limit = limit
+        return self.messages
 
     def update_summary(self, context, session_id, summary, summarized_until):
         self.summary = summary
@@ -84,6 +91,7 @@ CONTEXT = RequestContext(
 
 def test_context_combines_summary_preferences_and_recent_messages() -> None:
     repository = FakeMemoryRepository()
+    repository.qdrant = object()
     repository.summary = "Resumo acumulado"
     repository.memories.append(
         {"_id": "memory-1", "tipo": "preferencia", "conteudo": "Respostas curtas"}
@@ -92,7 +100,6 @@ def test_context_combines_summary_preferences_and_recent_messages() -> None:
 
     result = service.obter_contexto(CONTEXT, session_id="session-1", pergunta="Como responder?")
 
-    assert result["status"] == "ok"
     assert "Resumo acumulado" in result["contexto"]
     assert "Respostas curtas" in result["contexto"]
     assert "Últimas mensagens" in result["contexto"]
@@ -109,7 +116,7 @@ def test_inferred_memory_requires_automatic_consent() -> None:
         conteudo="Há uma pendência",
         origem="inferida",
     )
-    assert blocked["salva"] is False
+    assert blocked is False
 
     service.configurar_consentimento(CONTEXT, modo="automatica")
     stored = service.registrar(
@@ -118,31 +125,48 @@ def test_inferred_memory_requires_automatic_consent() -> None:
         conteudo="Há uma pendência",
         origem="inferida",
     )
-    assert stored["salva"] is True
+    assert stored is True
 
 
-def test_memory_search_requires_qdrant_when_it_is_not_configured() -> None:
+def test_memory_search_falls_back_to_mongo_when_qdrant_is_not_configured() -> None:
     repository = FakeMemoryRepository()
     repository.qdrant = None
+    repository.memories.append({"_id": "memory-1", "tipo": "decisao"})
     service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
 
-    with pytest.raises(RuntimeError, match="Qdrant é obrigatório"):
-        service.buscar(CONTEXT, pergunta="atrasos")
+    result = service.buscar(CONTEXT, pergunta="atrasos")
+
+    assert result == repository.memories
+    assert repository.semantic_queries == []
 
 
-def test_memory_search_does_not_fall_back_to_mongo_when_qdrant_fails() -> None:
+def test_memory_search_falls_back_to_mongo_when_qdrant_fails() -> None:
     repository = FakeMemoryRepository()
     repository.qdrant = object()
+    repository.memories.append({"_id": "memory-1", "tipo": "decisao"})
     repository.semantic_search = lambda *_args: (_ for _ in ()).throw(
-        ConnectionError("Qdrant indisponível")
-    )
-    repository.list_memories = lambda *_args, **_kwargs: pytest.fail(
-        "Busca semântica não pode ser substituída por listagem no Mongo"
+        ConnectionError("Qdrant unavailable")
     )
     service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
 
-    with pytest.raises(ConnectionError, match="Qdrant indisponível"):
-        service.buscar(CONTEXT, pergunta="atrasos")
+    result = service.buscar(CONTEXT, pergunta="atrasos")
+
+    assert result == repository.memories
+
+
+def test_successful_empty_qdrant_search_does_not_fall_back_to_mongo() -> None:
+    repository = FakeMemoryRepository()
+    repository.qdrant = object()
+    repository.memories.append({"_id": "memory-1", "tipo": "decisao"})
+    repository.semantic_search = lambda *_args: []
+    repository.list_memories = lambda *_args, **_kwargs: pytest.fail(
+        "An empty semantic result must stay empty"
+    )
+    service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
+
+    result = service.buscar(CONTEXT, pergunta="atrasos")
+
+    assert result == []
 
 
 def test_summary_is_incremental_and_threshold_based() -> None:
@@ -173,7 +197,7 @@ def test_close_empty_session_does_not_close_a_chat() -> None:
 
     result = service.encerrar_sessao(CONTEXT, session_id="missing")
 
-    assert result == {"status": "ok", "encerrada": False, "tem_mensagens": False}
+    assert result is False
 
 
 def test_list_chats_clamps_limit_and_returns_repository_results() -> None:
@@ -183,8 +207,19 @@ def test_list_chats_clamps_limit_and_returns_repository_results() -> None:
 
     result = service.listar_chats(CONTEXT, limit=999)
 
-    assert result == {"status": "ok", "count": 1, "chats": repository.chats}
+    assert result == repository.chats
     assert repository.last_list_limit == 100
+
+
+def test_list_messages_clamps_limit_and_passes_session_id() -> None:
+    repository = FakeMemoryRepository()
+    repository.messages = [{"_id": "message-1", "content": "Olá"}]
+    service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
+
+    result = service.listar_mensagens(CONTEXT, session_id="session-1", limit=999)
+
+    assert result == repository.messages
+    assert repository.last_message_limit == 100
 
 
 def test_disabled_consent_stops_session_persistence_and_retrieval() -> None:
@@ -203,6 +238,6 @@ def test_disabled_consent_stops_session_persistence_and_retrieval() -> None:
     )
     context = service.obter_contexto(CONTEXT, session_id="session-1", pergunta="O que foi dito?")
 
-    assert session["persistencia_ativa"] is False
-    assert message["salva"] is False
+    assert session is None
+    assert message is None
     assert context["contexto"] == ""
