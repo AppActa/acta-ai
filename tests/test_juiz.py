@@ -153,7 +153,7 @@ def test_judge_rejects_grounded_but_nonresponsive_answer(
         ),
     ],
 )
-def test_judge_keeps_valid_clarification_or_empty_result(
+def test_judge_uses_jev_relevance_for_clarification_or_empty_result(
     monkeypatch, question: str, answer: str, evidence: list[dict]
 ) -> None:
     client = FakeJevClient(
@@ -174,7 +174,10 @@ def test_judge_keeps_valid_clarification_or_empty_result(
         resposta_orquestrador=answer,
     )
 
-    assert result["resposta"] == answer
+    assert result["status"] == "SUBSTITUIDO"
+    assert result["resposta"] == (
+        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
+    )
 
 
 def test_judge_uses_jev_even_when_legacy_switch_is_false(monkeypatch) -> None:
@@ -206,7 +209,7 @@ def test_judge_uses_jev_even_when_legacy_switch_is_false(monkeypatch) -> None:
     assert len(client.calls) == 1
 
 
-def test_judge_rejects_unsupported_number_and_uses_grounded_fallback(monkeypatch) -> None:
+def test_judge_owns_factual_validation_and_uses_generic_fallback(monkeypatch) -> None:
     result = _evaluate(
         monkeypatch,
         (
@@ -216,11 +219,13 @@ def test_judge_rejects_unsupported_number_and_uses_grounded_fallback(monkeypatch
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert result["resposta"] == "Existem 10 tarefas atrasadas."
-    assert any("20" in problem for problem in result["problemas"])
+    assert result["resposta"] == (
+        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
+    )
+    assert any("falta de suporte factual" in problem for problem in result["problemas"])
 
 
-def test_judge_rejects_answer_without_attempting_free_text_correction(monkeypatch) -> None:
+def test_judge_does_not_return_unreviewed_specialist_answer(monkeypatch) -> None:
     result = _evaluate(
         monkeypatch,
         (
@@ -230,10 +235,12 @@ def test_judge_rejects_answer_without_attempting_free_text_correction(monkeypatc
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert "10 tarefas atrasadas" in result["resposta"]
+    assert result["resposta"] == (
+        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
+    )
 
 
-def test_judge_failure_uses_specialist_answer(monkeypatch) -> None:
+def test_judge_failure_uses_generic_fallback(monkeypatch) -> None:
     result = _evaluate(
         monkeypatch,
         RuntimeError("modelo indisponível"),
@@ -241,7 +248,9 @@ def test_judge_failure_uses_specialist_answer(monkeypatch) -> None:
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert "10 tarefas atrasadas" in result["resposta"]
+    assert result["resposta"] == (
+        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
+    )
     assert any("não pôde concluir" in problem for problem in result["problemas"])
 
 
@@ -302,10 +311,12 @@ def test_deterministic_mode_blocks_internal_details(monkeypatch) -> None:
     )
 
     assert result["status"] == "SUBSTITUIDO"
-    assert result["resposta"] == "O ciclo está em andamento."
+    assert result["resposta"] == (
+        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
+    )
 
 
-def test_fallback_never_returns_a_narrated_tool_call(monkeypatch) -> None:
+def test_rejected_answer_uses_generic_fallback(monkeypatch) -> None:
     _allow_with_jev(monkeypatch)
 
     result = judge_module.avaliar_resposta(
@@ -352,10 +363,10 @@ def test_judge_logs_non_sensitive_reasons_when_substituting_answer(monkeypatch, 
     assert result["status"] == "SUBSTITUIDO"
     assert "fidelidade=0.10" in caplog.text
     assert "evidencias_sucesso=False" in caplog.text
-    assert "Não há evidência de uma consulta bem-sucedida" in caplog.text
+    assert "possível falta de suporte factual" in caplog.text
 
 
-def test_ordered_list_numbers_are_not_treated_as_unsupported_facts(monkeypatch) -> None:
+def test_factual_validation_is_delegated_to_jev(monkeypatch) -> None:
     _allow_with_jev(monkeypatch)
 
     answer = (
@@ -388,7 +399,7 @@ def test_ordered_list_numbers_are_not_treated_as_unsupported_facts(monkeypatch) 
     assert result["resposta"] == answer
 
 
-def test_ordinal_list_labels_are_not_treated_as_unsupported_facts(monkeypatch) -> None:
+def test_ordinal_answer_is_delegated_to_jev(monkeypatch) -> None:
     _allow_with_jev(monkeypatch)
 
     answer = "1ª etapa: Plan (Planejar)\n2ª etapa: Do (Fazer)\n3ª etapa: Check (Checar)\n4ª etapa: Act (Agir)"
@@ -412,7 +423,7 @@ def test_ordinal_list_labels_are_not_treated_as_unsupported_facts(monkeypatch) -
     assert result["status"] == "APROVADO"
 
 
-def test_generated_timestamp_is_removed_without_rejecting_grounded_answer(monkeypatch) -> None:
+def test_answer_is_not_rewritten_to_remove_timestamp(monkeypatch) -> None:
     _allow_with_jev(monkeypatch)
 
     result = judge_module.avaliar_resposta(
@@ -439,10 +450,10 @@ def test_generated_timestamp_is_removed_without_rejecting_grounded_answer(monkey
     )
 
     assert result["status"] == "APROVADO"
-    assert "14:33" not in result["resposta"]
+    assert "14:33" in result["resposta"]
 
 
-def test_fallback_is_generic_without_structured_evidence(monkeypatch) -> None:
+def test_jev_can_accept_answer_without_numeric_precheck(monkeypatch) -> None:
     _allow_with_jev(monkeypatch)
 
     result = judge_module.avaliar_resposta(
@@ -464,7 +475,5 @@ def test_fallback_is_generic_without_structured_evidence(monkeypatch) -> None:
         resposta_orquestrador="Existem 20 tarefas atrasadas.",
     )
 
-    assert result["status"] == "SUBSTITUIDO"
-    assert result["resposta"] == (
-        "Não foi possível validar a resposta com segurança usando os dados disponíveis."
-    )
+    assert result["status"] == "APROVADO"
+    assert result["resposta"] == "Existem 20 tarefas atrasadas."
