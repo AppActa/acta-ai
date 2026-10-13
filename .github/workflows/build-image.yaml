@@ -1,0 +1,74 @@
+name: build-image
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: baixar código
+        uses: actions/checkout@v4
+
+      - name: preparar docker builds
+        uses: docker/setup-buildx-action@v3
+
+      - name: entrar no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: construir e publicar imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/appacta/acta-ai:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/AppActa/acta-ai
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: baixar manifests do platform
+        uses: actions/checkout@v4
+        with:
+          repository: AppActa/acta-platform
+          ref: main
+          token: ${{ secrets.ACTA_PLATFORM_TOKEN }}
+
+      - name: atualizar imagem no platform
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          PUSHED_AT: ${{ github.event.head_commit.timestamp }}
+        run: |
+          pull_request=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '.[0].html_url' 2>/dev/null || true)
+          pull_request=${pull_request:-"não identificada"}
+
+          commit_author="${COMMIT_AUTHOR}"
+          commit_author=${commit_author:-"não identificado"}
+
+          pushed_at="${PUSHED_AT}"
+          pushed_at=${pushed_at:-"não informado"}
+
+          sed -i "s|^\([[:space:]]*image: ghcr.io/appacta/acta-ai\).*$|\1:sha-${GITHUB_SHA}|" apps/ai.yaml
+          git diff --quiet -- apps/ai.yaml && exit 0
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/ai.yaml
+          git commit -m "chore: atualizar imagem de acta-ai" -m "PR: ${pull_request}
+          SHA: ${GITHUB_SHA}
+          Autor do commit: ${commit_author}
+          Usuário do push: ${GITHUB_ACTOR}
+          Data do push: ${pushed_at}"
+          git push origin main
