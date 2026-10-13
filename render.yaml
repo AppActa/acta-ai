@@ -8,6 +8,8 @@ services:
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+      - key: JEV_API_KEY
+        sync: false
       - key: ACTA_OPENAI_MODEL
         value: gpt-6-luna
       - key: ACTA_OPENAI_TRANSCRIPTION_MODEL
