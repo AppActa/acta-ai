@@ -149,6 +149,7 @@ def test_general_questions_use_recent_context_and_persist_answers(
 
     assert first_answer == "Resposta inicial"
     assert followup_answer == "Você perguntou sobre organização do tempo."
+    assert "Você é Cato, o gato laranja do ACTA" in prompts[0]
     assert "Usuário: Como organizar o tempo?" in prompts[1]
     assert "ACTA: Resposta inicial" in prompts[1]
     assert [item["role"] for item in saved_messages] == [

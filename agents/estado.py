@@ -29,6 +29,7 @@ from agents.guardrail import anonimizar_entrada, guardrail_entrada, guardrail_sa
 from agents.helpers.llms import llm
 from agents.juiz import avaliar_resposta
 from agents.prompts.prompt_memory_mongo import _PROMPT_CONSOLIDAR_MEMORIA_ACTA
+from agents.prompts.prompt_roteador import PERSONA_SISTEMA
 from clients.mcp_acta_client import (
     call_acta_tool,
     mcp_discovered_cycle_scope_context,
@@ -716,7 +717,9 @@ def no_resposta_geral(estado: Estado) -> dict:
         context = _contexto_recente_para_roteador(estado, user_message)
         memory_context = estado.get("contexto_memoria", "")
         prompt = (
-            "Responda em português à mensagem atual. Você pode responder perguntas gerais "
+            f"{PERSONA_SISTEMA}\n\n"
+            "Responda em português à mensagem atual. Se perguntarem seu nome, apresente-se "
+            "como Cato, assistente do ACTA. Você pode responder perguntas gerais "
             "simples e perguntas sobre o histórico recente fornecido. Para perguntas sobre "
             "a conversa, use somente o histórico abaixo. Para perguntas gerais, seja direto, "
             "não invente fatos e indique incerteza quando não souber. Não afirme dados "
