@@ -115,6 +115,50 @@ def test_faq_passes_through_router_and_output_guardrail(monkeypatch) -> None:
     assert response == "Revisada: Resposta do FAQ"
 
 
+@pytest.mark.parametrize("message_type", ["conversa", "fora_escopo"])
+def test_general_questions_use_recent_context_and_persist_answers(
+    monkeypatch,
+    message_type: str,
+) -> None:
+    _disable_external_memory(monkeypatch)
+    saved_messages = []
+    prompts = []
+    monkeypatch.setattr(state_module, "_salvar_mensagem", lambda **item: saved_messages.append(item))
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_entrada",
+        lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
+    )
+    _set_jev(monkeypatch, message_type=message_type)
+
+    def answer_general(prompt: str) -> AIMessage:
+        prompts.append(prompt)
+        content = "Resposta inicial" if len(prompts) == 1 else "Você perguntou sobre organização do tempo."
+        return AIMessage(content=content)
+
+    monkeypatch.setattr(state_module, "llm", SimpleNamespace(invoke=answer_general))
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_saida",
+        lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer},
+    )
+    session_id = f"teste::{uuid4()}"
+
+    first_answer = get_response("Como organizar o tempo?", session_id)
+    followup_answer = get_response("Qual foi minha pergunta anterior?", session_id)
+
+    assert first_answer == "Resposta inicial"
+    assert followup_answer == "Você perguntou sobre organização do tempo."
+    assert "Usuário: Como organizar o tempo?" in prompts[1]
+    assert "ACTA: Resposta inicial" in prompts[1]
+    assert [item["role"] for item in saved_messages] == [
+        "human",
+        "assistant",
+        "human",
+        "assistant",
+    ]
+
+
 def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     cycle_agent = FakeAgent("Dados do ciclo")
@@ -272,6 +316,7 @@ def test_specialists_are_functions_not_graph_nodes() -> None:
         "guardrail_entrada",
         "roteador",
         "orquestrador",
+        "resposta_geral",
         "juiz",
         "guardrail_saida",
         "__end__",
