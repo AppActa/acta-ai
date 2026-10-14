@@ -13,6 +13,7 @@ from agents.estado import (
     no_guardrail_saida,
     no_juiz,
     no_orquestrador,
+    no_resposta_geral,
     no_roteador,
 )
 from agents.estado import (
@@ -72,6 +73,7 @@ def construir_fluxo():
     graph.add_node("guardrail_entrada", no_guardrail_entrada)
     graph.add_node("roteador", no_roteador)
     graph.add_node("orquestrador", no_orquestrador)
+    graph.add_node("resposta_geral", no_resposta_geral)
     graph.add_node("juiz", no_juiz)
     graph.add_node("guardrail_saida", no_guardrail_saida)
 
@@ -85,10 +87,12 @@ def construir_fluxo():
         "roteador",
         decidir_pos_roteador,
         {
-            "orquestrador": "orquestrador",
+            "especialistas": "orquestrador",
+            "resposta_geral": "resposta_geral",
             "fim": END,
         },
     )
+    graph.add_edge("resposta_geral", "guardrail_saida")
     graph.add_edge("orquestrador", "juiz")
     graph.add_edge("juiz", "guardrail_saida")
     graph.add_edge("guardrail_saida", END)
