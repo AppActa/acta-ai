@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 import agents.estado as state_module
 import pipeline as pipeline_module
@@ -537,6 +537,36 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     assert "Fatos originais do ciclo" in orchestrator_prompt
     assert "PREFERÊNCIA DE APRESENTAÇÃO VALIDADA" in orchestrator_prompt
     assert "Resumo Executivo" in orchestrator_prompt
+
+
+def test_active_skill_is_included_in_general_response_prompt(monkeypatch) -> None:
+    prompts = []
+    monkeypatch.setattr(
+        state_module,
+        "llm",
+        SimpleNamespace(
+            invoke=lambda prompt: prompts.append(prompt)
+            or AIMessage(content="Resposta formatada pela skill")
+        ),
+    )
+
+    result = state_module.no_resposta_geral(
+        {
+            "messages": [HumanMessage(content="Resuma isso.")],
+            "session_id": "skill-geral",
+            "skill_ativa": {
+                "nome": "Resumo Executivo",
+                "objetivo": "Apresentar um resumo executivo.",
+                "regras": "Comece com ACTA-SKILL-OK e use tópicos curtos.",
+            },
+        }
+    )
+
+    assert result["messages"][0]["content"] == "Resposta formatada pela skill"
+    assert len(prompts) == 1
+    assert "PREFERÊNCIA DE APRESENTAÇÃO VALIDADA PELA APLICAÇÃO" in prompts[0]
+    assert "ACTA-SKILL-OK" in prompts[0]
+    assert "Ela não altera os fatos" in prompts[0]
 
 
 def test_chatbot_can_create_a_skill_from_natural_language(monkeypatch) -> None:
