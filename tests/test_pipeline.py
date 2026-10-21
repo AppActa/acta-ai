@@ -63,7 +63,6 @@ def _disable_external_memory(monkeypatch) -> None:
     monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "false")
     monkeypatch.setattr(state_module, "_carregar_contexto_memoria", lambda *_: "")
     monkeypatch.setattr(state_module, "_salvar_mensagem", lambda **_: None)
-    monkeypatch.setattr(state_module, "_registrar_memorias_explicitas", lambda *_: None)
     monkeypatch.setattr(state_module, "consolidar_memoria", lambda *_: None)
     monkeypatch.setattr(
         state_module,

@@ -8,15 +8,12 @@ from agents.helpers.skills.repository import SkillsRepository
 from agents.helpers.skills.service import SkillsService
 from clients.mcp_acta_client import MCPRequestContext
 from config import (
-    ACTA_MEMORY_INFERRED_RETENTION_DAYS,
-    ACTA_MEMORY_MESSAGE_RETENTION_DAYS,
     ACTA_MEMORY_RECENT_MESSAGES,
     ACTA_MEMORY_SUMMARY_EVERY_MESSAGES,
     ACTA_SYSTEM_FEATURES_DB_NAME,
     MONGODB_URI,
     QDRANT_API_KEY,
     QDRANT_CLUSTER_ENDPOINT,
-    QDRANT_MEMORY_COLLECTION_NAME,
     QDRANT_MEMORY_MESSAGES_COLLECTION_NAME,
     QDRANT_MEMORY_VECTOR_SIZE,
     QDRANT_TIMEOUT_SECONDS,
@@ -48,10 +45,7 @@ def get_memory_service() -> MemoryService:
         _mongo_database(),
         _qdrant_client(),
         messages_collection_name=QDRANT_MEMORY_MESSAGES_COLLECTION_NAME,
-        memories_collection_name=QDRANT_MEMORY_COLLECTION_NAME,
         vector_size=QDRANT_MEMORY_VECTOR_SIZE,
-        message_retention_days=ACTA_MEMORY_MESSAGE_RETENTION_DAYS,
-        inferred_retention_days=ACTA_MEMORY_INFERRED_RETENTION_DAYS,
     )
     repository.ensure_indexes()
     return MemoryService(

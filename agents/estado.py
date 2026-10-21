@@ -156,43 +156,11 @@ def _carregar_contexto_memoria(session_id: str, pergunta: str) -> str:
         return ""
 
 
-def _registrar_memorias_explicitas(session_id: str, pergunta: str) -> None:
-    """Captura apenas declarações inequívocas, sem gastar uma chamada de LLM."""
-
-    patterns = (
-        ("preferencia", r"\b(?:eu\s+)?prefiro\s+(.+)$"),
-        ("objetivo", r"\bmeu objetivo (?:é|e)\s+(.+)$"),
-        ("decisao", r"\bdecidimos(?: que)?\s+(.+)$"),
-        ("ponto_relevante", r"\b(?:lembre|lembra)(?:-se)?(?: de)? que\s+(.+)$"),
-    )
-    try:
-        from clients.memory_client import registrar_memoria
-
-        for memory_type, pattern in patterns:
-            match = re.search(pattern, pergunta.strip(), flags=re.IGNORECASE)
-            if not match:
-                continue
-            content = match.group(1).strip().rstrip(".")
-            if len(content) >= 3:
-                registrar_memoria(
-                    tipo=memory_type,
-                    conteudo=content,
-                    session_id=session_id,
-                )
-            break
-    except Exception:  #memória não deve derrubar o atendimento
-        logger.exception("Não foi possível registrar memória explícita da sessão %s", session_id)
-
-
 def consolidar_memoria(session_id: str, *, forcar: bool = False) -> bool:
-    """Atualiza o resumo incremental e sugere memórias longas conforme consentimento."""
+    """Atualiza o resumo incremental da conversa."""
 
     try:
-        from clients.memory_client import (
-            atualizar_resumo,
-            obter_material_resumo,
-            registrar_memoria,
-        )
+        from clients.memory_client import atualizar_resumo, obter_material_resumo
 
         material = (
             obter_material_resumo(session_id, forcar=True)
@@ -222,20 +190,6 @@ def consolidar_memoria(session_id: str, *, forcar: bool = False) -> bool:
         if not summary:
             raise ValueError("O modelo não retornou resumo.")
         atualizar_resumo(session_id, summary, material["resumido_ate"])
-        valid_types = {"preferencia", "ponto_relevante", "decisao", "objetivo"}
-        for item in list(parsed.get("memorias", []))[:5]:
-            if not isinstance(item, dict) or item.get("tipo") not in valid_types:
-                continue
-            content = str(item.get("conteudo", "")).strip()
-            if not content:
-                continue
-            registrar_memoria(
-                tipo=item["tipo"],
-                conteudo=content,
-                origem="inferida",
-                confianca=float(item.get("confianca", 0.7)),
-                session_id=session_id,
-            )
         return True
     except Exception:  #memória não deve derrubar o atendimento
         logger.exception("Não foi possível consolidar a memória da sessão %s", session_id)
@@ -509,7 +463,6 @@ def no_guardrail_entrada(estado: Estado) -> dict:
         content=question,
         agent="guardrail_entrada",
     )
-    _registrar_memorias_explicitas(session_id, question)
     return {
         "rota": "roteador",
         "mapa_pii": pii_map,

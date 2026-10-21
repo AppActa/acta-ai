@@ -38,18 +38,14 @@ Você consolida a memória de um assistente gerencial ACTA.
 Retorne SOMENTE JSON válido neste formato:
 {{
   "resumo": "resumo acumulado curto e factual",
-  "memorias": [
-    {{"tipo": "ponto_relevante|decisao|objetivo|preferencia", "conteudo": "...", "confianca": 0.0}}
-  ]
+  "memorias": []
 }}
 
 Regras:
 - incorpore o resumo anterior sem repetir informações;
-- preserve decisões, objetivos, preferências e pendências úteis entre sessões;
-- inclua no máximo 5 memórias novas e autônomas;
+- preserve decisões, objetivos, preferências e pendências úteis no resumo;
+- mantenha "memorias" como uma lista vazia;
 - não grave suposições frágeis, segredos, credenciais ou dados pessoais sensíveis;
-- use "preferencia" apenas quando a preferência estiver clara;
-- confiança deve ficar entre 0 e 1;
 - não invente informações.
 
 Resumo anterior:

@@ -73,7 +73,7 @@ def test_faq_agent_uses_mcp_tool(monkeypatch):
     assert calls == [("faq_retriever", {"question": "Como funciona o PDCA?", "limit": 3})]
 
 
-def test_all_memory_facade_operations_call_the_system_service(monkeypatch):
+def test_conversation_memory_facades_call_the_system_service(monkeypatch):
     service = Mock()
     service.garantir_sessao.return_value = None
     service.salvar_mensagem.return_value = None
@@ -81,13 +81,8 @@ def test_all_memory_facade_operations_call_the_system_service(monkeypatch):
     service.material_resumo.return_value = {"deve_resumir": True}
     service.encerrar_sessao.return_value = True
     service.listar_chats.return_value = [{"session_id": "s"}]
+    service.listar_mensagens.return_value = [{"_id": "m"}]
     service.atualizar_resumo.return_value = None
-    service.registrar.return_value = True
-    service.buscar.return_value = [{"_id": "searched"}]
-    service.listar.return_value = [{"_id": "m"}]
-    service.excluir.return_value = None
-    service.obter_consentimento.return_value = {"modo": "automatica"}
-    service.configurar_consentimento.return_value = {"modo": "desativado"}
     monkeypatch.setattr(memory_client, "get_memory_service", lambda: service)
 
     with mcp_acta_client.mcp_request_context(usuario_id=7, empresa_id=3):
@@ -99,14 +94,7 @@ def test_all_memory_facade_operations_call_the_system_service(monkeypatch):
         assert memory_client.encerrar_sessao("s") is True
         assert memory_client.listar_chats()[0]["session_id"] == "s"
         memory_client.atualizar_resumo("s", "resumo", "2026-09-01T00:00:00+00:00")
-        assert memory_client.registrar_memoria(
-            tipo="preferencia", conteudo="curto", session_id="s"
-        ) is True
-        assert memory_client.buscar_memorias("curto")[0]["_id"] == "searched"
-        assert memory_client.listar_memorias()[0]["_id"] == "m"
-        memory_client.excluir_memoria("m")
-        assert memory_client.obter_consentimento()["modo"] == "automatica"
-        assert memory_client.configurar_consentimento("desativado")["modo"] == "desativado"
+        assert memory_client.listar_mensagens("s")[0]["_id"] == "m"
 
     assert service.garantir_sessao.call_count == 1
     assert service.salvar_mensagem.call_args.kwargs["role"] == "usuario"
@@ -117,12 +105,7 @@ def test_all_memory_facade_operations_call_the_system_service(monkeypatch):
     assert service.atualizar_resumo.call_args.kwargs["resumido_ate"].isoformat() == (
         "2026-09-01T00:00:00+00:00"
     )
-    assert service.registrar.call_args.kwargs["session_id_origem"] == "s"
-    assert service.buscar.call_args.kwargs["pergunta"] == "curto"
-    assert service.listar.call_count == 1
-    assert service.excluir.call_count == 1
-    assert service.obter_consentimento.call_count == 1
-    assert service.configurar_consentimento.call_count == 1
+    assert service.listar_mensagens.call_args.kwargs == {"session_id": "s", "limit": 30}
 
 
 def test_skill_crud_facades_use_system_service(monkeypatch):

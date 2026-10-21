@@ -175,7 +175,7 @@ def get_response(
     """Mantém o contrato utilizado pela API FastAPI."""
 
     return executar_fluxo_acta(
-        message,
+        message,    
         session_id,
         id_ciclo=id_ciclo,
         ciclo_ativo=ciclo_ativo,

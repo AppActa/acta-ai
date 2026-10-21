@@ -14,9 +14,11 @@ Função:
 
 from db_scripts.mongo import (
     MONGODB_DB_NAME,
+    MONGODB_MESSAGES_COLLECTION,
     MONGODB_SESSIONS_COLLECTION,
     agora,
     criar_cliente_mongo,
+    criar_indices_chat_mensagens,
     criar_indices_chat_sessoes,
 )
 
@@ -32,6 +34,7 @@ def criar_collections_base(db):
 
     collections = [
         MONGODB_SESSIONS_COLLECTION,
+        MONGODB_MESSAGES_COLLECTION,
         "formularios_respostas",
         "ishikawa_analises",
         "cinco_porques",
@@ -72,6 +75,8 @@ def main():
     criar_collections_base(db)
     criar_indices_chat_sessoes(db[MONGODB_SESSIONS_COLLECTION])
     print(f"Índices criados/verificados: {MONGODB_SESSIONS_COLLECTION}")
+    criar_indices_chat_mensagens(db[MONGODB_MESSAGES_COLLECTION])
+    print(f"Índices criados/verificados: {MONGODB_MESSAGES_COLLECTION}")
 
     print("\nMongoDB inicializado com sucesso para o ACTA AI.")
 
