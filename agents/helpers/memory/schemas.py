@@ -22,15 +22,3 @@ class MessageInput(SessionInput):
     agent: str | None = Field(default=None, max_length=100)
 
 
-class MemoryInput(BaseModel):
-    tipo: Literal["preferencia", "ponto_relevante", "decisao", "objetivo"]
-    conteudo: str = Field(min_length=1, max_length=2000)
-    origem: Literal["explicita", "inferida"] = "explicita"
-    confianca: float = Field(default=1.0, ge=0, le=1)
-    session_id_origem: str | None = Field(default=None, max_length=200)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ConsentInput(BaseModel):
-    modo: Literal["desativado", "somente_explicitas", "automatica"]
-    retencao_dias: int | None = Field(default=None, ge=1, le=3650)

@@ -16,7 +16,7 @@ O roteador direciona cada solicitação a especialistas de ciclos, tarefas, cola
 | Especialistas | Roteamento para consultas de ciclos, tarefas, colaboradores, formulários, indicadores, relatórios, lições aprendidas e FAQ via ACTA MCP. |
 | Ciclos | Encontrar ciclos pela descrição e consultar um ou vários ciclos, mantendo chamadas MCP dentro do escopo informado. |
 | Áudio | Transcrever arquivos de até 25 MB e encaminhar o texto ao fluxo de chat. |
-| Memória | Recuperar contexto entre conversas, consultar, resumir e excluir memórias, além de configurar consentimento e retenção. |
+| Conversas | Persistir sessões e mensagens no MongoDB, carregar até 30 mensagens recentes e indexar mensagens no Qdrant. |
 | Skills pessoais | Criar skills em Markdown pelo chat ou pela API, listar e excluir skills e invocá-las com comandos como `/nome-da-skill sua pergunta`. |
 | Proteção da interação | Reconhecer padrões de prompt injection e dados pessoais; avaliar fidelidade, segurança e relevância da resposta antes de devolvê-la. |
 
@@ -75,9 +75,8 @@ Copy-Item .env.example .env
 | `JEV_API_KEY` | Guardrails de entrada e saída e avaliação da resposta. |
 | `ACTA_MCP_URL`, `ACTA_MCP_API_KEY` | Endpoint e credencial de serviço do ACTA MCP. O endpoint padrão é `http://127.0.0.1:8000/mcp`. |
 | `MONGODB_URI` | Banco de conversas e memórias; o padrão local é `mongodb://127.0.0.1:27018`. |
-| `GEMINI_API_KEY`, `QDRANT_CLUSTER_ENDPOINT`, `QDRANT_API_KEY` | Configuração da busca semântica de memória. Sem Qdrant ou Gemini, o código usa mensagens recentes do MongoDB como fallback. |
+| `GEMINI_API_KEY`, `QDRANT_CLUSTER_ENDPOINT`, `QDRANT_API_KEY` | Configuração da busca semântica em mensagens. Sem Qdrant, o contexto usa as mensagens recentes do MongoDB. |
 | `ACTA_OPENAI_MODEL`, `ACTA_OPENAI_TRANSCRIPTION_MODEL` | Modelos usados; padrões `gpt-6-luna` e `gpt-transcribe`. |
-| `ACTA_MEMORY_MESSAGE_RETENTION_DAYS`, `ACTA_MEMORY_INFERRED_RETENTION_DAYS` | Retenção padrão de mensagens (90 dias) e memórias inferidas (180 dias). |
 
 A lista completa de parâmetros e valores padrão está em [Configuração](docs/configuracao.md). Nunca versione o `.env` real.
 
@@ -116,10 +115,9 @@ As rotas principais são:
 | `POST /chat` | Processa uma mensagem e retorna a resposta para o `session_id`. |
 | `POST /chat/audio` | Transcreve áudio e encaminha o texto ao fluxo de chat. |
 | `GET /listar_chats`, `GET /chats/{session_id}/mensagens` | Lista conversas e mensagens pertencentes ao usuário e à empresa informados. |
-| `/memoria` e `/memoria/consentimento` | Consulta, busca, exclui memórias e configura consentimento e retenção. |
 | `/skills` | Cria, lista e exclui skills pessoais. |
 
-A API completa, parâmetros e exemplos de requisição estão em [Referência da API HTTP](docs/api.md). A política de memória está em [Memória entre conversas](docs/memoria.md).
+A API completa, parâmetros e exemplos de requisição estão em [Referência da API HTTP](docs/api.md). A persistência e o contexto de conversas estão em [Histórico de conversas](docs/memoria.md).
 
 ## 🧪 Validação e fluxo de entrega
 
@@ -154,7 +152,7 @@ O [`render.yaml`](render.yaml) descreve um serviço web Docker no Render. O arqu
 
 - [Arquitetura e fluxo da conversa](docs/arquitetura.md)
 - [Referência da API HTTP](docs/api.md)
-- [Memória entre conversas](docs/memoria.md)
+- [Histórico de conversas](docs/memoria.md)
 - [Configuração, execução e testes](docs/configuracao.md)
 - [ACTA MCP](https://github.com/AppActa/acta-mcp)
 

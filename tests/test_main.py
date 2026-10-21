@@ -329,50 +329,9 @@ def test_audio_chat_returns_bad_request_when_skill_is_invalid(monkeypatch) -> No
     assert response.json()["detail"] == "Skill inválida."
 
 
-def test_memory_consent_and_deletion_endpoints(monkeypatch) -> None:
-    monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
-    monkeypatch.setattr(
-        main,
-        "configurar_consentimento",
-        lambda modo, retencao: {"modo": modo, "retencao_dias": retencao},
-    )
-    monkeypatch.setattr(main, "excluir_memoria", lambda _: None)
-
-    consent = client.put(
-        "/memoria/consentimento",
-        json={"usuario_id": 3, "empresa_id": 4, "modo": "automatica", "retencao_dias": 60},
-    )
-    assert consent.status_code == 200
-    assert consent.json()["modo"] == "automatica"
-
-    deleted = client.delete("/memoria/abc?usuario_id=3&empresa_id=4")
-    assert deleted.status_code == 200
-    assert deleted.json() == {"id_memoria": "abc", "excluida": True}
-
-
-def test_memory_search_endpoint_uses_request_identity(monkeypatch) -> None:
-    contexts = []
-    calls = []
-
-    def fake_context(**kwargs):
-        contexts.append(kwargs)
-        return nullcontext()
-
-    monkeypatch.setattr(main, "mcp_request_context", fake_context)
-    monkeypatch.setattr(
-        main,
-        "buscar_memorias",
-        lambda pergunta, limit: calls.append((pergunta, limit)) or [{"conteudo": "Evidência"}],
-    )
-
-    response = client.get(
-        "/memoria/buscar?pergunta=prefer%C3%AAncia&usuario_id=3&empresa_id=4&limit=5"
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"memorias": [{"conteudo": "Evidência"}]}
-    assert calls == [("preferência", 5)]
-    assert contexts == [{"usuario_id": 3, "empresa_id": 4}]
+def test_old_separate_memory_routes_are_removed() -> None:
+    assert client.get("/memoria?usuario_id=3&empresa_id=4").status_code == 404
+    assert client.get("/memoria/consentimento?usuario_id=3&empresa_id=4").status_code == 404
 
 
 def test_skill_creation_list_and_deletion_endpoints(monkeypatch) -> None:

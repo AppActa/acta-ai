@@ -92,16 +92,11 @@ removidos mantendo a ordem da primeira ocorrência. O ciclo ativo, se informado,
 precisa estar na lista e será priorizado. O arquivo não pode exceder 25 MB. A resposta
 inclui a transcrição e a resposta do chat.
 
-## Memória e consentimento
+## Histórico e contexto
 
-- `GET /memoria?usuario_id=1&empresa_id=1&tipo=preferencia&limit=50`
-- `DELETE /memoria/{id_memoria}?usuario_id=1&empresa_id=1`
-- `GET /memoria/consentimento?usuario_id=1&empresa_id=1`
-- `PUT /memoria/consentimento`
-- `GET /memoria/buscar?pergunta=preferência&usuario_id=1&empresa_id=1&limit=6`
-
-O corpo do `PUT` aceita `modo`: `desativado`, `somente_explicitas` ou `automatica`,
-e `retencao_dias` opcional. Veja a política em [Memória](memoria.md).
+As sessões e mensagens ficam em `memoria_sessoes` e `memoria_mensagens` no MongoDB.
+O contexto automático inclui até 30 mensagens recentes. O histórico não tem expiração
+automática; veja [Histórico de conversas](memoria.md).
 
 ## Skills personalizadas
 

@@ -11,14 +11,9 @@ from agents.helpers.errors import AuthorizationError, NotFoundError
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
-    buscar_memorias,
-    configurar_consentimento,
     encerrar_sessao,
-    excluir_memoria,
     listar_chats,
-    listar_memorias,
     listar_mensagens,
-    obter_consentimento,
 )
 from clients.skill_client import (
     SkillClientError,
@@ -72,13 +67,6 @@ class ChatRequest(BaseModel):
         if self.ciclo_ativo is not None and self.ciclo_ativo not in self.id_ciclo:
             raise ValueError("ciclo_ativo deve estar presente em id_ciclo.")
         return self
-
-
-class ConsentimentoRequest(BaseModel):
-    usuario_id: int = Field(..., gt=0)
-    empresa_id: int = Field(..., gt=0)
-    modo: str = Field(..., pattern="^(desativado|somente_explicitas|automatica)$")
-    retencao_dias: int | None = Field(default=None, ge=1, le=3650)
 
 
 class CriarSkillRequest(BaseModel):
@@ -236,64 +224,6 @@ async def chat_audio(
         "transcricao": transcricao, # Quando utilizar a transcrição, Mostrar a Tradução, para o usuário ver se isso é realmente o que ele quiz dizer
         "resposta": resposta,
     }
-
-
-@app.get("/memoria")
-def consultar_memorias(
-    usuario_id: int,
-    empresa_id: int,
-    tipo: str | None = None,
-    limit: int = 50,
-) -> dict:
-    """Lista o que está armazenado para dar transparência ao usuário."""
-
-    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
-        return {"memorias": listar_memorias(tipo=tipo, limit=limit)}
-
-
-@app.delete("/memoria/{id_memoria}")
-def apagar_memoria(
-    id_memoria: str,
-    usuario_id: int,
-    empresa_id: int,
-) -> dict:
-    """Remove um item da fonte MongoDB e do índice semântico Qdrant."""
-
-    with mcp_request_context(
-        usuario_id=usuario_id,
-        empresa_id=empresa_id,
-    ):
-        excluir_memoria(id_memoria)
-    return {"id_memoria": id_memoria, "excluida": True}
-
-
-@app.get("/memoria/buscar")
-def buscar_memorias_semanticamente(
-    pergunta: str = Query(..., min_length=1, max_length=1000),
-    usuario_id: int = Query(..., gt=0),
-    empresa_id: int = Query(..., gt=0),
-    limit: int = Query(default=6, ge=1, le=20),
-) -> dict:
-    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
-        return {"memorias": buscar_memorias(pergunta, limit)}
-
-
-@app.get("/memoria/consentimento")
-def consultar_consentimento(
-    usuario_id: int,
-    empresa_id: int,
-) -> dict:
-    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
-        return obter_consentimento()
-
-
-@app.put("/memoria/consentimento")
-def alterar_consentimento(request: ConsentimentoRequest) -> dict:
-    with mcp_request_context(
-        usuario_id=request.usuario_id,
-        empresa_id=request.empresa_id,
-    ):
-        return configurar_consentimento(request.modo, request.retencao_dias)
 
 
 @app.post("/skills")

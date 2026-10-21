@@ -5,10 +5,16 @@ from datetime import UTC, datetime
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.collection import Collection
 
-from config import MONGODB_DB_NAME, MONGODB_SESSIONS_COLLECTION, MONGODB_URI
+from config import (
+    MONGODB_DB_NAME,
+    MONGODB_MESSAGES_COLLECTION,
+    MONGODB_SESSIONS_COLLECTION,
+    MONGODB_URI,
+)
 
 __all__ = [
     "MONGODB_DB_NAME",
+    "MONGODB_MESSAGES_COLLECTION",
     "MONGODB_SESSIONS_COLLECTION",
     "MONGODB_URI",
     "agora",
@@ -41,14 +47,17 @@ def criar_indices_chat_sessoes(col: Collection) -> None:
         name="idx_session_id_unique",
     )
     col.create_index(
-        [("user_id", ASCENDING), ("iniciada_em", DESCENDING)],
-        name="idx_user_id_iniciada_em",
+        [("empresa_id", ASCENDING), ("usuario_id", ASCENDING), ("atualizada_em", DESCENDING)],
+        name="idx_empresa_usuario_atualizada",
     )
     col.create_index(
         [("status", ASCENDING), ("atualizada_em", DESCENDING)],
         name="idx_status_atualizada_em",
     )
+
+
+def criar_indices_chat_mensagens(col: Collection) -> None:
     col.create_index(
-        [("mensagens.agent", ASCENDING)],
-        name="idx_mensagens_agent",
+        [("session_id", ASCENDING), ("criada_em", DESCENDING)],
+        name="idx_session_criada_em",
     )

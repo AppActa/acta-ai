@@ -34,8 +34,6 @@ services:
         sync: false
       - key: QDRANT_MEMORY_MESSAGES_COLLECTION_NAME
         value: memoria_mensagens
-      - key: QDRANT_MEMORY_COLLECTION_NAME
-        value: memoria_usuario
       - key: MONGODB_SESSIONS_COLLECTION
         value: chat_sessoes
       - key: ACTA_STORE_RAW_PII
