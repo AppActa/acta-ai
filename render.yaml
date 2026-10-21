@@ -22,8 +22,6 @@ services:
         value: "false"
       - key: MONGODB_URI
         sync: false
-      - key: MONGODB_DB_NAME
-        value: acta_ai
       - key: ACTA_SYSTEM_FEATURES_DB_NAME
         value: acta
       - key: GEMINI_API_KEY
@@ -34,8 +32,6 @@ services:
         sync: false
       - key: QDRANT_MEMORY_MESSAGES_COLLECTION_NAME
         value: memoria_mensagens
-      - key: MONGODB_SESSIONS_COLLECTION
-        value: chat_sessoes
       - key: ACTA_STORE_RAW_PII
         value: "false"
       - key: ACTA_MAX_MESSAGE_CHARS
