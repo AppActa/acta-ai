@@ -36,6 +36,24 @@ from clients.skill_client import (
 logger = logging.getLogger(__name__)
 
 
+def _texto_resposta(content: object) -> str:
+    """Retorna somente texto legível quando o modelo entrega blocos multimodais."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        partes = []
+        for bloco in content:
+            if isinstance(bloco, str):
+                partes.append(bloco)
+            elif isinstance(bloco, dict) and bloco.get("type") == "text":
+                texto = bloco.get("text")
+                if isinstance(texto, str) and texto.strip():
+                    partes.append(texto.strip())
+        if partes:
+            return "\n".join(partes)
+    return str(content).strip()
+
+
 def _normalizar_ids_ciclo(id_ciclo: int | list[int] | None) -> list[int]:
     if id_ciclo is None:
         return []
@@ -155,14 +173,14 @@ def executar_fluxo_acta(
             },
         )
 
-    answer = final_state.get("resposta_final", "").strip()
+    answer = _texto_resposta(final_state.get("resposta_final", ""))
     if answer:
         return answer
 
     messages = final_state.get("messages", [])
     if messages:
         content = messages[-1].content
-        return content if isinstance(content, str) else str(content)
+        return _texto_resposta(content)
     return "Não foi possível gerar uma resposta."
 
 
