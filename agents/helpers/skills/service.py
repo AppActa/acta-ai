@@ -47,7 +47,7 @@ class SkillsService:
 
     def listar(self, context: RequestContext, *, limit: int = 50) -> list[dict[str, Any]]:
         documents = self.repository.list(context, min(max(limit, 1), 100))
-        skills = [
+        return [
             {
                 "nome": item["nome"],
                 "slug": item["slug"],
@@ -56,7 +56,6 @@ class SkillsService:
             }
             for item in documents
         ]
-        return skills
 
     def excluir(self, context: RequestContext, *, nome: str) -> dict[str, Any]:
         slug = normalize_skill_command(nome)

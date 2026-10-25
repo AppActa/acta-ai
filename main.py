@@ -75,23 +75,26 @@ class CriarSkillRequest(BaseModel):
     conteudo_markdown: str = Field(..., min_length=1, max_length=5000)
 
 
-def _chat_http_exception(exc: SkillClientError) -> HTTPException:
-    return HTTPException(status_code=400, detail=str(exc))
+def _responder_chat(request: ChatRequest, *, message: str, session_id: str) -> str:
+    with mcp_request_context(
+        usuario_id=request.usuario_id,
+        empresa_id=request.empresa_id,
+    ):
+        try:
+            return get_response(
+                message=message,
+                session_id=session_id,
+                id_ciclo=request.id_ciclo,
+                ciclo_ativo=request.ciclo_ativo,
+            )
+        except SkillClientError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/health")
 def root() -> dict[str, str]:
     return {"message": "API do ACTA AI está online!"}
 
-
-# Comentários para quem utilizar a API
-# Use POST /nova_conversa para gerar um novo session_id. A sessão só é persistida
-# quando a primeira mensagem é salva pelo fluxo de chat.
-
-# Com essas variáveis junte mais essas duas: message e id_ciclo. Esses são os parâmetros da classe ChatRequest. Agora, crie uma requisição POST para o endpoint /chat, passando o ChatRequest. Ela retorna o session_id e a resposta.
-# Para utilizar audio, usar o POST /chat/audio
-
-# Uma coisa importante, o usuário Mobile não terá acesso para criar/alterar dados! apenas consultar-los. Enquanto no Web, ele tem acesso a alterações, apenas envolvendo os ciclos em que ele está presente e como um gestor/administrador
 
 @app.post("/nova_conversa")
 def nova_conversa(request: NovaSessaoRequest) -> dict[str, int | str | bool]:
@@ -147,19 +150,7 @@ def chat(request: ChatRequest) -> dict[str, str]:
     if not session_id:
         raise HTTPException(status_code=400, detail="O parâmetro 'session_id' é obrigatório.")
 
-    with mcp_request_context(
-        usuario_id=request.usuario_id,
-        empresa_id=request.empresa_id,
-    ):
-        try:
-            response = get_response(
-                message=message,
-                session_id=session_id,
-                id_ciclo=request.id_ciclo,
-                ciclo_ativo=request.ciclo_ativo,
-            )
-        except SkillClientError as exc:
-            raise _chat_http_exception(exc) from exc
+    response = _responder_chat(request, message=message, session_id=session_id)
     return {"session_id": session_id, "resposta": response}
 
 @app.post("/chat/audio")
@@ -205,23 +196,11 @@ async def chat_audio(
             detail="Não foi possível transcrever o áudio.",
         )
 
-    with mcp_request_context(
-        usuario_id=usuario_id,
-        empresa_id=empresa_id,
-    ):
-        try:
-            resposta = get_response(
-                message=transcricao,
-                session_id=session_id,
-                id_ciclo=scope.id_ciclo,
-                ciclo_ativo=scope.ciclo_ativo,
-            )
-        except SkillClientError as exc:
-            raise _chat_http_exception(exc) from exc
+    resposta = _responder_chat(scope, message=transcricao, session_id=session_id)
 
     return {
         "session_id": session_id,
-        "transcricao": transcricao, # Quando utilizar a transcrição, Mostrar a Tradução, para o usuário ver se isso é realmente o que ele quiz dizer
+        "transcricao": transcricao,
         "resposta": resposta,
     }
 

@@ -39,9 +39,8 @@ class MemoryService:
     def obter_contexto(self, context: RequestContext, *, session_id: str,
                        pergunta: str | None = None, limit: int | None = None) -> dict[str, Any]:
         data = SessionInput(session_id=session_id)
-        session, messages = self.repository.session_context(
-            context, data.session_id, self.recent_messages if limit is None else min(max(limit, 1), MAX_CONTEXT_MESSAGES)
-        )
+        message_limit = self.recent_messages if limit is None else min(max(limit, 1), MAX_CONTEXT_MESSAGES)
+        session, messages = self.repository.session_context(context, data.session_id, message_limit)
         parts = []
         if session.get("resumo"):
             parts.append(f"Resumo anterior desta conversa:\n{session['resumo']}")

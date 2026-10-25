@@ -64,7 +64,7 @@ def _texto_mensagem(message: BaseMessage) -> str:
 
 def _ultima_mensagem(estado: Estado, message_type: str) -> BaseMessage | None:
     for message in reversed(estado["messages"]):
-        if message.type == message_type and _texto_mensagem(message).strip():
+        if message.type == message_type and _texto_mensagem(message):
             return message
     return None
 
@@ -111,12 +111,8 @@ def _pergunta_abrangente(question: str) -> bool:
     )
 
 
-def _ids_ciclo_estado(estado: Estado) -> list[int]:
-    return estado.get("id_ciclo", [])
-
-
 def _ciclos_para_consulta(estado: Estado) -> list[int]:
-    cycle_ids = _ids_ciclo_estado(estado)
+    cycle_ids = estado.get("id_ciclo", [])
     if estado.get("escopo_ciclos") in {"todos", "comparacao"}:
         return cycle_ids
     active_cycle = estado.get("ciclo_ativo")
@@ -210,7 +206,7 @@ def _executar_agente(
         "e só então responda com o resultado. Não exponha nomes de ferramentas nem detalhes "
         "internos. Se faltar um identificador obrigatório, peça esse identificador sem inventá-lo."
     ]
-    cycle_ids = _ids_ciclo_estado(estado)
+    cycle_ids = estado.get("id_ciclo", [])
     if cycle_ids:
         if len(cycle_ids) > 1 and estado.get("ciclo_ativo") is None:
             context_parts.append(
@@ -247,20 +243,19 @@ def _executar_agente(
         output = agent.invoke(
             {"messages": [SystemMessage(content=context), *estado["messages"]]}
         )
-    return _texto_mensagem(output["messages"][-1]).strip()
+    return _texto_mensagem(output["messages"][-1])
 
 
 def _executar_rag(estado: Estado) -> str:
     user_message = _ultima_mensagem(estado, "human")
-    question = _texto_mensagem(user_message).strip() if user_message else ""
+    question = _texto_mensagem(user_message) if user_message else ""
     return responder_faq(question)
 
 
 def _executar_licoes(estado: Estado) -> str:
     with mcp_discovered_cycle_scope_context():
-        cycle_ids = _ids_ciclo_estado(estado)
         user_message = _ultima_mensagem(estado, "human")
-        question = _texto_mensagem(user_message).strip() if user_message else ""
+        question = _texto_mensagem(user_message) if user_message else ""
         normalized = _normalizar_texto(question)
         query_ids = _ciclos_para_consulta(estado)
         if not query_ids:
@@ -282,10 +277,9 @@ def _executar_licoes(estado: Estado) -> str:
             candidate_id = candidates[0].get("id_ciclo") if isinstance(candidates[0], dict) else None
             if not isinstance(candidate_id, int) or candidate_id <= 0:
                 return "Não consegui identificar o ciclo. Descreva-o pelo título ou assunto."
-            cycle_ids = [candidate_id]
             query_ids = [candidate_id]
 
-        id_ciclo = query_ids[0] if query_ids else cycle_ids[0]
+        id_ciclo = query_ids[0]
         if any(
             marker in normalized
             for marker in ("crie uma licao", "criar uma licao", "registre uma licao", "gere uma licao")
@@ -481,7 +475,7 @@ def no_roteador(estado: Estado) -> dict:
             "rota": "fim",
         }
 
-    question = _texto_mensagem(user_message).strip()
+    question = _texto_mensagem(user_message)
     conversation_context = _contexto_recente_para_roteador(estado, user_message)
     try:
         with TypeSafeClient(api_key=JEV_API_KEY) as client:
@@ -624,9 +618,9 @@ def no_orquestrador(estado: Estado) -> dict:
         answer = "Não foi possível obter uma resposta dos especialistas selecionados."
     elif len(responses) == 1 and not active_skill:
         answer = responses[0]["resposta"]
-    elif responses:
+    else:
         user_message = _ultima_mensagem(estado, "human")
-        question = _texto_mensagem(user_message).strip() if user_message else ""
+        question = _texto_mensagem(user_message) if user_message else ""
         specialist_text = "\n\n".join(
             f"ESPECIALISTA: {item['especialista']}\nRESPOSTA:\n{item['resposta']}"
             for item in responses
@@ -651,7 +645,7 @@ def no_orquestrador(estado: Estado) -> dict:
             f"{skill_text}"
         )
         output = orquestrador.invoke({"messages": [{"role": "human", "content": prompt}]})
-        answer = _texto_mensagem(output["messages"][-1]).strip()
+        answer = _texto_mensagem(output["messages"][-1])
     return {
         "messages": [{"role": "assistant", "content": answer}],
         "respostas_especialistas": responses,
@@ -666,7 +660,7 @@ def no_resposta_geral(estado: Estado) -> dict:
     if user_message is None:
         answer = "Não recebi uma pergunta válida para responder."
     else:
-        question = _texto_mensagem(user_message).strip()
+        question = _texto_mensagem(user_message)
         context = _contexto_recente_para_roteador(estado, user_message)
         memory_context = estado.get("contexto_memoria", "")
         active_skill = estado.get("skill_ativa")
@@ -697,7 +691,7 @@ def no_resposta_geral(estado: Estado) -> dict:
             f"MENSAGEM ATUAL:\n{question}"
         )
         try:
-            answer = _texto_mensagem(llm.invoke(prompt)).strip()
+            answer = _texto_mensagem(llm.invoke(prompt))
             if not answer:
                 answer = "Não consegui elaborar uma resposta para essa pergunta."
         except Exception:
@@ -714,8 +708,8 @@ def no_juiz(estado: Estado) -> dict:
 
     user_message = _ultima_mensagem(estado, "human")
     assistant_message = _ultima_mensagem(estado, "ai")
-    question = _texto_mensagem(user_message).strip() if user_message else ""
-    answer = _texto_mensagem(assistant_message).strip() if assistant_message else ""
+    question = _texto_mensagem(user_message) if user_message else ""
+    answer = _texto_mensagem(assistant_message) if assistant_message else ""
     evaluation = avaliar_resposta(
         pergunta=question,
         respostas_especialistas=estado.get("respostas_especialistas", []),
@@ -735,7 +729,7 @@ def no_juiz(estado: Estado) -> dict:
 
 def no_guardrail_saida(estado: Estado) -> dict:
     assistant_message = _ultima_mensagem(estado, "ai")
-    raw_answer = _texto_mensagem(assistant_message).strip() if assistant_message else ""
+    raw_answer = _texto_mensagem(assistant_message) if assistant_message else ""
     result = guardrail_saida(raw_answer, estado.get("mapa_pii", {}))
     final_answer = result["mensagem"]
 
