@@ -27,15 +27,22 @@ flowchart TD
     D --> E[Carrega contexto de memória no ACTA AI]
     E --> F[Roteador]
     F --> G[Especialistas e tools MCP]
-    G --> H[Orquestrador e juiz]
+    G --> H[Orquestrador]
     H --> I[Guardrail de saída]
-    I --> J[Persiste mensagem e devolve resposta]
+    I --> J[Juiz: respostas de especialistas aprovadas pelo guardrail]
+    J --> K[Persiste mensagem e devolve resposta]
+    I -->|Bloqueio ou resposta geral| K
 ```
 
 O roteador seleciona os especialistas de acordo com a intenção. Especialistas usam
 tools do MCP para dados de ciclos, tarefas, colaboradores, formulários, predições e
 lições aprendidas e FAQ. O FAQ/RAG usa a base documental publicada pelo MCP. A resposta final passa
 por revisão antes de voltar ao cliente.
+
+O guardrail de saída revisa e remove dados pessoais antes do juiz. Somente respostas
+de especialistas aprovadas pelo guardrail seguem para avaliação de fidelidade.
+Bloqueios e respostas gerais encerram após o guardrail. A persistência registra
+apenas a resposta final entregue, incluindo eventuais substituições feitas pelo juiz.
 
 ## Identidade e isolamento
 

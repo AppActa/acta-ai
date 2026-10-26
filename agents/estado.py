@@ -55,6 +55,7 @@ class Estado(MessagesState):
     ciclo_ativo: int | None
     contexto_memoria: str
     resposta_final: str
+    saida_aprovada: bool
     skill_ativa: dict[str, Any] | None
 
 
@@ -717,6 +718,7 @@ def no_juiz(estado: Estado) -> dict:
         resposta_orquestrador=answer,
     )
     judged_answer = str(evaluation["resposta"]).strip()
+    _persistir_resposta_final(estado, judged_answer)
 
     messages: list[Any] = []
     if assistant_message is not None:
@@ -724,7 +726,19 @@ def no_juiz(estado: Estado) -> dict:
     messages.append({"role": "assistant", "content": judged_answer})
     return {
         "messages": messages,
+        "resposta_final": judged_answer,
     }
+
+
+def _persistir_resposta_final(estado: Estado, resposta: str) -> None:
+    source = ",".join(estado.get("especialistas", [])) or "roteador"
+    _salvar_mensagem(
+        session_id=estado["session_id"],
+        role="assistant",
+        content=resposta,
+        agent=source,
+    )
+    consolidar_memoria(estado["session_id"])
 
 
 def no_guardrail_saida(estado: Estado) -> dict:
@@ -733,14 +747,8 @@ def no_guardrail_saida(estado: Estado) -> dict:
     result = guardrail_saida(raw_answer, estado.get("mapa_pii", {}))
     final_answer = result["mensagem"]
 
-    source = ",".join(estado.get("especialistas", [])) or "roteador"
-    _salvar_mensagem(
-        session_id=estado["session_id"],
-        role="assistant",
-        content=final_answer,
-        agent=source,
-    )
-    consolidar_memoria(estado["session_id"])
+    if not result["valido"] or estado.get("rota") != "especialistas":
+        _persistir_resposta_final(estado, final_answer)
 
     messages: list[Any] = []
     if assistant_message is not None:
@@ -749,7 +757,14 @@ def no_guardrail_saida(estado: Estado) -> dict:
     return {
         "messages": messages,
         "resposta_final": final_answer,
+        "saida_aprovada": result["valido"],
     }
+
+
+def decidir_pos_guardrail_saida(estado: Estado) -> str:
+    if estado.get("saida_aprovada") and estado.get("rota") == "especialistas":
+        return "juiz"
+    return "fim"
 
 
 def decidir_pos_guardrail_entrada(estado: Estado) -> str:
