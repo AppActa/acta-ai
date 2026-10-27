@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 from agents.estado import (
     Estado,
     decidir_pos_guardrail_entrada,
+    decidir_pos_guardrail_saida,
     decidir_pos_roteador,
     no_guardrail_entrada,
     no_guardrail_saida,
@@ -111,9 +112,13 @@ def construir_fluxo():
         },
     )
     graph.add_edge("resposta_geral", "guardrail_saida")
-    graph.add_edge("orquestrador", "juiz")
-    graph.add_edge("juiz", "guardrail_saida")
-    graph.add_edge("guardrail_saida", END)
+    graph.add_edge("orquestrador", "guardrail_saida")
+    graph.add_conditional_edges(
+        "guardrail_saida",
+        decidir_pos_guardrail_saida,
+        {"juiz": "juiz", "fim": END},
+    )
+    graph.add_edge("juiz", END)
 
     return graph.compile(checkpointer=MemorySaver())
 

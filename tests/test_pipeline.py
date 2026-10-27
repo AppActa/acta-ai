@@ -114,6 +114,36 @@ def test_faq_passes_through_router_and_output_guardrail(monkeypatch) -> None:
     assert response == "Revisada: Resposta do FAQ"
 
 
+@pytest.mark.parametrize("approved", [True, False])
+def test_output_guardrail_precedes_judge_and_persists_final_answer(monkeypatch, approved):
+    _disable_external_memory(monkeypatch)
+    events = []
+    saved = []
+    monkeypatch.setattr(state_module, "_salvar_mensagem", lambda **item: saved.append(item))
+    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True})
+    _set_jev(monkeypatch, selected=("rag",))
+    monkeypatch.setattr(state_module, "responder_faq", lambda _: "Rascunho")
+
+    def review(answer, _):
+        events.append("guardrail")
+        assert answer == "Rascunho"
+        return {"valido": approved, "mensagem": "Revisada" if approved else "Bloqueada"}
+
+    def judge(**kwargs):
+        events.append("juiz")
+        assert kwargs["resposta_orquestrador"] == "Revisada"
+        return {"status": "SUBSTITUIDO", "resposta": "Resposta segura do juiz"}
+
+    monkeypatch.setattr(state_module, "guardrail_saida", review)
+    monkeypatch.setattr(state_module, "avaliar_resposta", judge)
+
+    answer = get_response("O que é o ACTA?", f"teste::{uuid4()}")
+
+    assert events == (["guardrail", "juiz"] if approved else ["guardrail"])
+    assert answer == ("Resposta segura do juiz" if approved else "Bloqueada")
+    assert [item["content"] for item in saved if item["role"] == "assistant"] == [answer]
+
+
 @pytest.mark.parametrize("message_type", ["conversa", "fora_escopo"])
 def test_general_questions_use_recent_context_and_persist_answers(
     monkeypatch,
