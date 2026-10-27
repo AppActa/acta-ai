@@ -5,7 +5,7 @@ from typing import Literal
 
 from langchain_core.tools import tool
 
-from tools.common import call_mcp_tool
+from clients.mcp_acta_client import call_acta_tool
 
 StatusTarefa = Literal[
     "PENDENTE",
@@ -31,16 +31,18 @@ def tarefas_consultar(
 ) -> dict | str:
     """Consulta tarefas autorizadas de um ciclo com filtros opcionais."""
 
-    return call_mcp_tool(
+    return call_acta_tool(
         "tarefas_consultar",
-        id_ciclo=id_ciclo,
-        id_responsavel=id_responsavel,
-        status=status,
-        prioridade=prioridade,
-        data_inicio=data_inicio,
-        data_fim=data_fim,
-        apenas_atrasadas=apenas_atrasadas,
-        limit=limit,
+        {
+            "id_ciclo": id_ciclo,
+            "id_responsavel": id_responsavel,
+            "status": status,
+            "prioridade": prioridade,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+            "apenas_atrasadas": apenas_atrasadas,
+            "limit": limit,
+        },
     )
 
 
@@ -48,7 +50,7 @@ def tarefas_consultar(
 def tarefas_atrasadas(id_ciclo: int, limit: int = 50) -> dict | str:
     """Lista tarefas atrasadas ou vencidas de um ciclo autorizado."""
 
-    return call_mcp_tool("tarefas_atrasadas", id_ciclo=id_ciclo, limit=limit)
+    return call_acta_tool("tarefas_atrasadas", {"id_ciclo": id_ciclo, "limit": limit})
 
 
 @tool
@@ -62,14 +64,16 @@ def tarefas_concluidas(
 ) -> dict | str:
     """Lista tarefas concluídas de um ciclo autorizado."""
 
-    return call_mcp_tool(
+    return call_acta_tool(
         "tarefas_concluidas",
-        id_ciclo=id_ciclo,
-        id_responsavel=id_responsavel,
-        prioridade=prioridade,
-        data_inicio=data_inicio,
-        data_fim=data_fim,
-        limit=limit,
+        {
+            "id_ciclo": id_ciclo,
+            "id_responsavel": id_responsavel,
+            "prioridade": prioridade,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+            "limit": limit,
+        },
     )
 
 
@@ -77,7 +81,7 @@ def tarefas_concluidas(
 def tarefas_detalhes(id_tarefa: int) -> dict | str:
     """Consulta detalhes, dependências e bloqueios de uma tarefa autorizada."""
 
-    return call_mcp_tool("tarefas_detalhes", id_tarefa=id_tarefa)
+    return call_acta_tool("tarefas_detalhes", {"id_tarefa": id_tarefa})
 
 
 @tool
@@ -87,10 +91,12 @@ def tarefas_por_responsavel(
 ) -> dict | str:
     """Agrupa tarefas por responsável e status no ciclo."""
 
-    return call_mcp_tool(
+    return call_acta_tool(
         "tarefas_por_responsavel",
-        id_ciclo=id_ciclo,
-        id_responsavel=id_responsavel,
+        {
+            "id_ciclo": id_ciclo,
+            "id_responsavel": id_responsavel,
+        },
     )
 
 
@@ -101,10 +107,12 @@ def tarefas_alertas_prazo(
 ) -> dict | str:
     """Consulta alertas de prazo das tarefas do ciclo."""
 
-    return call_mcp_tool(
+    return call_acta_tool(
         "tarefas_alertas_prazo",
-        id_ciclo=id_ciclo,
-        somente_nao_lidos=somente_nao_lidos,
+        {
+            "id_ciclo": id_ciclo,
+            "somente_nao_lidos": somente_nao_lidos,
+        },
     )
 
 
@@ -112,11 +120,7 @@ def tarefas_alertas_prazo(
 def tarefas_relatorio_completo(id_ciclo: int, limit: int = 50) -> dict | str:
     """Consolida tarefas, atrasos, responsáveis e alertas de prazo."""
 
-    return call_mcp_tool(
-        "tarefas_relatorio_completo",
-        id_ciclo=id_ciclo,
-        limit=limit,
-    )
+    return call_acta_tool("tarefas_relatorio_completo", {"id_ciclo": id_ciclo, "limit": limit})
 
 
 @tool
@@ -130,15 +134,17 @@ def tarefas_criar(
     prioridade: PrioridadeTarefa = "MEDIA",
 ) -> dict | str:
     """Cria uma tarefa quando o usuário pedir explicitamente e possuir acesso create."""
-    return call_mcp_tool(
+    return call_acta_tool(
         "tarefas_criar",
-        id_ciclo=id_ciclo,
-        id_plano_acao=id_plano_acao,
-        id_responsavel=id_responsavel,
-        titulo=titulo,
-        descricao=descricao,
-        data_fim_prevista=data_fim_prevista,
-        prioridade=prioridade,
+        {
+            "id_ciclo": id_ciclo,
+            "id_plano_acao": id_plano_acao,
+            "id_responsavel": id_responsavel,
+            "titulo": titulo,
+            "descricao": descricao,
+            "data_fim_prevista": data_fim_prevista,
+            "prioridade": prioridade,
+        },
     )
 
 
@@ -152,21 +158,23 @@ def tarefas_atualizar(
     data_fim_prevista: date | None = None,
 ) -> dict | str:
     """Atualiza somente os campos explicitamente solicitados de uma tarefa."""
-    return call_mcp_tool(
+    return call_acta_tool(
         "tarefas_atualizar",
-        id_tarefa=id_tarefa,
-        titulo=titulo,
-        descricao=descricao,
-        id_responsavel=id_responsavel,
-        prioridade=prioridade,
-        data_fim_prevista=data_fim_prevista,
+        {
+            "id_tarefa": id_tarefa,
+            "titulo": titulo,
+            "descricao": descricao,
+            "id_responsavel": id_responsavel,
+            "prioridade": prioridade,
+            "data_fim_prevista": data_fim_prevista,
+        },
     )
 
 
 @tool
 def tarefas_atualizar_status(id_tarefa: int, status: StatusTarefa) -> dict | str:
     """Atualiza o status de uma tarefa quando solicitado explicitamente."""
-    return call_mcp_tool("tarefas_atualizar_status", id_tarefa=id_tarefa, status=status)
+    return call_acta_tool("tarefas_atualizar_status", {"id_tarefa": id_tarefa, "status": status})
 
 
 TOOLS = [

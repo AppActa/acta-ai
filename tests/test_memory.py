@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage
 
-import agents.estado as state_module
+import agents.memoria as memory_module
 
 
 def test_summary_is_consolidated_without_creating_separate_memories(monkeypatch):
@@ -23,6 +23,6 @@ def test_summary_is_consolidated_without_creating_separate_memories(monkeypatch)
         def invoke(self, _prompt):
             return AIMessage(content='{"resumo":"Entrega combinada para sexta.","memorias":[]}')
 
-    monkeypatch.setattr(state_module, "llm", FakeLLM())
-    assert state_module.consolidar_memoria("s1") is True
+    monkeypatch.setattr(memory_module, "llm", FakeLLM())
+    assert memory_module.consolidar_memoria("s1") is True
     assert calls[0][1] == "Entrega combinada para sexta."
