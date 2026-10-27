@@ -18,19 +18,8 @@ from config import MONGODB_MESSAGES_COLLECTION, MONGODB_SESSIONS_COLLECTION
 logger = logging.getLogger(__name__)
 SESSION_TITLE_MAX_LENGTH = 80
 MAX_CONTEXT_MESSAGES = 30
-PII_PATTERNS = (
-    ("CPF", r"\d{3}[.]?\d{3}[.]?\d{3}-?\d{2}"),
-    ("CNPJ", r"\d{2}[.]?\d{3}[.]?\d{3}/?\d{4}-?\d{2}"),
-    ("TELEFONE", r"\(?\d{2}\)?\s?\d{4,5}-?\d{4}"),
-    ("EMAIL", r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
-)
-
-
-def sanitize_text(text: str) -> str:
-    sanitized = text.strip()
-    for label, pattern in PII_PATTERNS:
-        sanitized = re.sub(pattern, f"[{label} OMITIDO]", sanitized)
-    return sanitized
+MAX_RELEVANT_MEMORIES = 5
+MEMORY_SCORE_THRESHOLD = 0.55
 
 
 def _session_title(content: str) -> str:
@@ -66,8 +55,7 @@ class MemoryRepository:
         self.sessions.create_index("session_id", unique=True)
         self.sessions.create_index([("empresa_id", 1), ("usuario_id", 1), ("atualizada_em", -1)])
         self.messages.create_index([("session_id", 1), ("criada_em", -1)])
-        if self.qdrant is not None:
-            self._ensure_vector_collection()
+        self._ensure_vector_collection()
 
     def _ensure_vector_collection(self) -> None:
         if self.qdrant is None:
@@ -175,7 +163,7 @@ class MemoryRepository:
             "session_id": session_id,
             **self._owner(context),
             "role": role,
-            "content": sanitize_text(content)[:8000],
+            "content": content.strip()[:8000],
             "agent": agent,
             "metadata": metadata,
             "indice_status": "pendente" if self.qdrant is not None else "nao_configurado",
@@ -213,6 +201,49 @@ class MemoryRepository:
         )
         messages.reverse()
         return session, serialize(messages)
+
+    def search_relevant_memories(
+        self, context: RequestContext, *, session_id: str, query: str, limit: int = MAX_RELEVANT_MEMORIES
+    ) -> list[dict[str, Any]]:
+        if self.qdrant is None or not query.strip():
+            return []
+
+        results = self.qdrant.query_points(
+            collection_name=self.messages_collection_name,
+            query=gerar_embedding(query),
+            query_filter=models.Filter(
+                must=[
+                    models.FieldCondition(key="usuario_id", match=models.MatchValue(value=context.usuario_id)),
+                    models.FieldCondition(key="empresa_id", match=models.MatchValue(value=context.empresa_id)),
+                ],
+                must_not=[
+                    models.FieldCondition(key="session_id", match=models.MatchValue(value=session_id))
+                ],
+            ),
+            limit=min(max(limit, 1), MAX_RELEVANT_MEMORIES),
+            score_threshold=MEMORY_SCORE_THRESHOLD,
+            with_payload=False,
+        )
+
+        memories = []
+        for point in results.points:
+            message = self.messages.find_one({"_id": str(point.id), **self._owner(context)})
+            if not message or message.get("session_id") == session_id:
+                continue
+            session = self.sessions.find_one(
+                {"session_id": message["session_id"], **self._owner(context)},
+                {"titulo": 1, "resumo": 1},
+            ) or {}
+            memories.append({
+                "titulo": session.get("titulo", ""),
+                "resumo": session.get("resumo", ""),
+                "role": message.get("role", "desconhecido"),
+                "agent": message.get("agent"),
+                "content": message.get("content", ""),
+                "criada_em": message.get("criada_em"),
+                "score": point.score,
+            })
+        return serialize(memories)
 
     def list_messages(self, context: RequestContext, session_id: str, limit: int) -> list[dict[str, Any]]:
         if self._existing_session(context, session_id) is None:
@@ -278,7 +309,7 @@ class MemoryRepository:
     ) -> None:
         result = self.sessions.update_one(
             {"session_id": session_id, **self._owner(context)},
-            {"$set": {"resumo": sanitize_text(summary)[:12000], "resumido_ate": summarized_until,
+            {"$set": {"resumo": summary.strip()[:12000], "resumido_ate": summarized_until,
                       "atualizada_em": datetime.now(UTC)}},
         )
         if result.matched_count == 0:

@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime
 from typing import Any
 
 from agents.helpers.memory.repository import MAX_CONTEXT_MESSAGES, MemoryRepository
 from agents.helpers.memory.schemas import MessageInput, SessionInput
 from clients.mcp_acta_client import MCPRequestContext as RequestContext
+
+logger = logging.getLogger(__name__)
 
 
 def _format_messages(messages: list[dict[str, Any]]) -> str:
@@ -36,8 +39,9 @@ class MemoryService:
             agent=data.agent, metadata=data.metadata,
         )
 
-    def obter_contexto(self, context: RequestContext, *, session_id: str,
-                       pergunta: str | None = None, limit: int | None = None) -> dict[str, Any]:
+    def obter_contexto(
+        self, context: RequestContext, *, session_id: str, query: str = "", limit: int | None = None
+    ) -> dict[str, Any]:
         data = SessionInput(session_id=session_id)
         message_limit = self.recent_messages if limit is None else min(max(limit, 1), MAX_CONTEXT_MESSAGES)
         session, messages = self.repository.session_context(context, data.session_id, message_limit)
@@ -46,9 +50,25 @@ class MemoryService:
             parts.append(f"Resumo anterior desta conversa:\n{session['resumo']}")
         if messages:
             parts.append("Últimas mensagens desta conversa:\n" + _format_messages(messages))
+        try:
+            memories = self.repository.search_relevant_memories(
+                context, session_id=data.session_id, query=query
+            )
+        except Exception:  # noqa: BLE001 - falha na busca não deve impedir o atendimento
+            logger.exception("Não foi possível buscar memórias de outras conversas.")
+            memories = []
+        if memories:
+            memory_lines = []
+            for memory in memories:
+                title = memory.get("titulo") or "Conversa anterior"
+                details = [f"{title}: {memory.get('role', 'desconhecido')}: {memory.get('content', '')}"]
+                if memory.get("resumo"):
+                    details.append(f"Resumo: {memory['resumo']}")
+                memory_lines.append("\n".join(details))
+            parts.append("Memórias relevantes de outras conversas:\n" + "\n\n".join(memory_lines))
         return {
             "contexto": "\n\n".join(parts), "resumo": session.get("resumo", ""),
-            "preferencias": [], "memorias_relevantes": [], "mensagens_recentes": messages,
+            "preferencias": [], "memorias_relevantes": memories, "mensagens_recentes": messages,
         }
 
     def material_resumo(self, context: RequestContext, *, session_id: str, forcar: bool = False) -> dict[str, Any]:

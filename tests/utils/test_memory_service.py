@@ -30,6 +30,9 @@ class Repository:
         self.last_limit = limit
         return {"session_id": session_id, "resumo": self.summary}, self.summary_messages[-limit:]
 
+    def search_relevant_memories(self, _context, **_kwargs):
+        return []
+
     def summary_material(self, _context, session_id):
         return {"session_id": session_id, "resumo": self.summary}, self.summary_messages
 
@@ -60,6 +63,20 @@ def test_context_includes_summary_recent_messages_and_caps_at_30():
     assert "Últimas mensagens" in context["contexto"]
     assert context["preferencias"] == []
     assert context["memorias_relevantes"] == []
+
+
+def test_context_searches_and_formats_relevant_memories():
+    repository = Repository()
+    repository.search_relevant_memories = lambda _context, **kwargs: [
+        {"titulo": "Tributação", "role": "assistente", "content": "A empresa está no Lucro Real."}
+    ]
+    service = MemoryService(repository, recent_messages=8, summary_every_messages=4)
+
+    context = service.obter_contexto(CONTEXT, session_id="s1", query="Qual regime tributário?")
+
+    assert len(context["memorias_relevantes"]) == 1
+    assert "Memórias relevantes de outras conversas" in context["contexto"]
+    assert "A empresa está no Lucro Real." in context["contexto"]
 
 
 def test_message_session_and_summary_operations():
