@@ -6,14 +6,14 @@ from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.collection import Collection
 
 from config import (
-    MONGODB_DB_NAME,
+    ACTA_SYSTEM_FEATURES_DB_NAME,
     MONGODB_MESSAGES_COLLECTION,
     MONGODB_SESSIONS_COLLECTION,
     MONGODB_URI,
 )
 
 __all__ = [
-    "MONGODB_DB_NAME",
+    "ACTA_SYSTEM_FEATURES_DB_NAME",
     "MONGODB_MESSAGES_COLLECTION",
     "MONGODB_SESSIONS_COLLECTION",
     "MONGODB_URI",

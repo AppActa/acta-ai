@@ -13,7 +13,7 @@ Função:
 """
 
 from db_scripts.mongo import (
-    MONGODB_DB_NAME,
+    ACTA_SYSTEM_FEATURES_DB_NAME,
     MONGODB_MESSAGES_COLLECTION,
     MONGODB_SESSIONS_COLLECTION,
     agora,
@@ -68,9 +68,9 @@ def main():
 
     print("Conexão com MongoDB realizada com sucesso.")
 
-    db = client[MONGODB_DB_NAME]
+    db = client[ACTA_SYSTEM_FEATURES_DB_NAME]
 
-    print(f"Banco selecionado: {MONGODB_DB_NAME}")
+    print(f"Banco selecionado: {ACTA_SYSTEM_FEATURES_DB_NAME}")
 
     criar_collections_base(db)
     criar_indices_chat_sessoes(db[MONGODB_SESSIONS_COLLECTION])
