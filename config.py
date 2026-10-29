@@ -16,6 +16,14 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 JEV_API_KEY = os.getenv("JEV_API_KEY")
 
+ACTA_INTENTION_MAX_RETRIES = int(os.getenv("ACTA_INTENTION_MAX_RETRIES", "2"))
+if ACTA_INTENTION_MAX_RETRIES < 0:
+    raise ValueError("ACTA_INTENTION_MAX_RETRIES deve ser >= 0.")
+
+ACTA_RESPONSE_MAX_RETRIES = int(os.getenv("ACTA_RESPONSE_MAX_RETRIES", "2"))
+if ACTA_RESPONSE_MAX_RETRIES < 0:
+    raise ValueError("ACTA_RESPONSE_MAX_RETRIES deve ser >= 0.")
+
 ACTA_OPENAI_MODEL = os.getenv("ACTA_OPENAI_MODEL", "gpt-6-luna")
 ACTA_OPENAI_TRANSCRIPTION_MODEL = os.getenv(
     "ACTA_OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe"

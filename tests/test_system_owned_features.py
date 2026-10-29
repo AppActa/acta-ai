@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
+from langchain_core.messages import AIMessage
 
 import agents.agents as agent_tools
 import clients.memory_client as memory_client
@@ -64,7 +65,7 @@ def test_faq_agent_uses_mcp_tool(monkeypatch):
     monkeypatch.setattr(
         agent_tools,
         "llm",
-        Mock(invoke=lambda prompt: Mock(content=f"Resposta baseada em {prompt}")),
+        Mock(invoke=lambda prompt: AIMessage(content=f"Resposta baseada em {prompt}")),
     )
 
     result = agent_tools.responder_faq("Como funciona o PDCA?")

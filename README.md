@@ -6,7 +6,7 @@ Assistente gerencial do ACTA para apoiar o ciclo **PDCA** (*Plan, Do, Check, Act
 
 O `acta-ai` recebe mensagens por uma API HTTP, executa um fluxo de agentes com LangGraph e consulta operações de domínio pelo [servidor ACTA MCP](https://github.com/AppActa/acta-mcp). Ele também mantém histórico de conversas, memórias e skills pessoais no MongoDB; o Qdrant pode indexar esses dados para busca semântica.
 
-O roteador direciona cada solicitação a especialistas de ciclos, tarefas, colaboradores, formulários, indicadores, relatórios, lições aprendidas ou FAQ. Um orquestrador consolida os resultados, e o juiz verifica se a resposta está apoiada pelas evidências recebidas antes da revisão de saída.
+O roteador direciona cada solicitação a especialistas de ciclos, tarefas, colaboradores, formulários, indicadores, relatórios, lições aprendidas ou FAQ. Antes de qualquer escrita de domínio, o juiz avalia a intenção (ferramenta e argumentos): só executa com decisão aprovada e apoio >= 0.7. Pode pedir até duas correções ou solicitar esclarecimento sem executar. Consultas continuam no fluxo atual. Um orquestrador consolida os resultados; após o guardrail de saída, o juiz final verifica a resposta contra as evidências. Se houver inconsistência, pode solicitar até duas correções ao especialista responsável ou ao orquestrador, ou pedir esclarecimento ao usuário. A revisão da resposta permite somente consultas para evitar repetir gravações.
 
 ## ✨ Funcionalidades
 
@@ -29,7 +29,11 @@ flowchart LR
     IN --> MEM[Contexto e memória]
     MEM --> R[Roteador LangGraph]
     R --> ESP[Especialistas]
-    ESP --> MCP[ACTA MCP]
+    ESP -->|Consulta| MCP[ACTA MCP]
+    ESP -->|Proposta de escrita| JI[Juiz da intenção]
+    JI -->|Aprovada e apoio >= 0.7| MCP
+    JI -->|Corrigir: até 2 vezes| ESP
+    JI -->|Esclarecimento ou bloqueio| OUT
     MCP --> ESP
     ESP --> J[Orquestrador e juiz]
     J --> OUT[Guardrail de saída]

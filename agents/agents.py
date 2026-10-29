@@ -4,6 +4,7 @@ import logging
 
 from langchain.agents import create_agent
 
+from agents.execucao import bloquear_lote_de_escrita
 from agents.helpers.llms import llm
 from agents.prompts.prompt_ciclo import CICLO_PROMPT_COMPLETO
 from agents.prompts.prompt_colaborador import COLABORADOR_PROMPT_COMPLETO
@@ -41,35 +42,52 @@ ESPECIALISTAS_VALIDOS = (
 )
 ALIASES_ESPECIALISTAS = {"faq": "rag"}
 
+TOOLS_POR_ESPECIALISTA = {
+    "rag": [],
+    "ciclo": CICLO_TOOLS,
+    "indicadores": CICLO_TOOLS,
+    "licoes": _tools_com_busca_de_ciclo(LICOES_MCP_TOOLS),
+    "tarefas": _tools_com_busca_de_ciclo(TAREFAS_TOOLS),
+    "colaboradores": _tools_com_busca_de_ciclo(COLABORADOR_TOOLS),
+    "formularios": _tools_com_busca_de_ciclo(FORMULARIO_TOOLS),
+    "relatorios": _tools_com_busca_de_ciclo(RELATORIO_TOOLS),
+}
+
 ciclo_agent = create_agent(
     model=llm,
-    tools=CICLO_TOOLS,
+    tools=TOOLS_POR_ESPECIALISTA["ciclo"],
     system_prompt=CICLO_PROMPT_COMPLETO,
+    middleware=[bloquear_lote_de_escrita],
 )
 licoes_agent = create_agent(
     model=llm,
-    tools=LICOES_MCP_TOOLS,
+    tools=TOOLS_POR_ESPECIALISTA["licoes"],
     system_prompt=LICOES_PROMPT_COMPLETO,
+    middleware=[bloquear_lote_de_escrita],
 )
 colaboradores_agent = create_agent(
     model=llm,
-    tools=_tools_com_busca_de_ciclo(COLABORADOR_TOOLS),
+    tools=TOOLS_POR_ESPECIALISTA["colaboradores"],
     system_prompt=COLABORADOR_PROMPT_COMPLETO,
+    middleware=[bloquear_lote_de_escrita],
 )
 formularios_agent = create_agent(
     model=llm,
-    tools=_tools_com_busca_de_ciclo(FORMULARIO_TOOLS),
+    tools=TOOLS_POR_ESPECIALISTA["formularios"],
     system_prompt=FORMULARIO_PROMPT_COMPLETO,
+    middleware=[bloquear_lote_de_escrita],
 )
 relatorios_agent = create_agent(
     model=llm,
-    tools=_tools_com_busca_de_ciclo(RELATORIO_TOOLS),
+    tools=TOOLS_POR_ESPECIALISTA["relatorios"],
     system_prompt=RELATORIO_PROMPT_COMPLETO,
+    middleware=[bloquear_lote_de_escrita],
 )
 tarefas_agent = create_agent(
     model=llm,
-    tools=_tools_com_busca_de_ciclo(TAREFAS_TOOLS),
+    tools=TOOLS_POR_ESPECIALISTA["tarefas"],
     system_prompt=TAREFAS_PROMPT_COMPLETO,
+    middleware=[bloquear_lote_de_escrita],
 )
 
 orquestrador = create_agent(
@@ -78,7 +96,7 @@ orquestrador = create_agent(
 )
 
 
-def responder_faq(pergunta: str) -> str:
+def responder_faq(pergunta: str, *, feedback: str = "") -> str:
     """Responde perguntas conceituais usando a base de conhecimento do ACTA."""
 
     pergunta = pergunta.strip()
@@ -103,9 +121,10 @@ def responder_faq(pergunta: str) -> str:
         )
         if not contexto or not contexto.strip():
             return "Não encontrei informação suficiente na base do ACTA para responder essa pergunta."
-        resposta = llm.invoke(
-            _PROMPT_FAQ.format(contexto=contexto, pergunta=pergunta)
-        ).content
+        prompt = _PROMPT_FAQ.format(contexto=contexto, pergunta=pergunta)
+        if feedback:
+            prompt += f"\nRevisão solicitada pelo juiz: {feedback}\nCorrija somente com as evidências fornecidas."
+        resposta = llm.invoke(prompt).text
         return resposta.strip()
     except Exception:
         logger.exception("Falha ao responder pelo especialista FAQ/RAG")

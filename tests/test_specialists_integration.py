@@ -48,7 +48,8 @@ def test_specialist_returns_real_answer(specialist: str, question: str) -> None:
         "respostas_especialistas": [],
         "mapa_pii": {},
         "session_id": f"integration::{specialist}::{uuid4()}",
-        "id_ciclo": 1,
+        "id_ciclo": [1],
+        "ciclo_ativo": 1,
         "contexto_memoria": "",
         "resposta_final": "",
     }
@@ -91,7 +92,8 @@ def test_multiple_specialists_return_real_answers() -> None:
         "respostas_especialistas": [],
         "mapa_pii": {},
         "session_id": f"integration::multiple::{uuid4()}",
-        "id_ciclo": 1,
+        "id_ciclo": [1],
+        "ciclo_ativo": 1,
         "contexto_memoria": "",
         "resposta_final": "",
     }

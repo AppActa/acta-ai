@@ -26,6 +26,11 @@ class FakeAgent:
         return self
 
 
+def test_model_text_blocks_are_rendered_as_plain_text():
+    message = AIMessage(content=[{"type": "text", "text": "Rascunho criado."}])
+    assert state_module._texto_mensagem(message) == "Rascunho criado."
+
+
 class FakeJevClient:
     def __init__(self, message_type="negocio", selected=(), cycle_scope="ativo"):
         self.message_type = message_type

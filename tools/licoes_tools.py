@@ -24,10 +24,10 @@ def _cycle() -> int:
         raise ValueError("Informe o ciclo para consultar lições aprendidas.")
     return cycle_id
 
-@tool
-def criar_licao_aprendida(contexto: str, expectativa: str) -> dict[str, Any]:
+@tool("licoes_criar")
+def criar_licao_aprendida(id_ciclo: int, contexto: str, expectativa: str) -> dict[str, Any]:
     """Cria uma lição, gera o PDF e o anexa ao ciclo ativo autorizado."""
-    return call_acta_tool("licoes_criar", {"id_ciclo": _cycle(), "contexto": contexto, "expectativa": expectativa})
+    return call_acta_tool("licoes_criar", {"id_ciclo": id_ciclo, "contexto": contexto, "expectativa": expectativa})
 
 @tool
 def resumir_licoes_aprendidas() -> dict[str, Any]:

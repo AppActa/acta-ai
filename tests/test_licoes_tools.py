@@ -18,6 +18,7 @@ def test_create_lesson_tool_forwards_only_agent_authored_fields(monkeypatch) -> 
     with mcp_request_context(usuario_id=3, empresa_id=4), licoes_tools.licoes_context(id_ciclo=7):
         result = criar_licao_aprendida.invoke(
             {
+                "id_ciclo": 7,
                 "contexto": "Síntese criada pelo agente de ciclos.",
                 "expectativa": "Evitar a recorrência do problema.",
             }

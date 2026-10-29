@@ -3,6 +3,61 @@ from types import SimpleNamespace
 import pytest
 
 import agents.juiz as judge_module
+from agents.intencao import AvaliacaoIntencao, Intention
+
+
+@pytest.fixture(autouse=True)
+def safe_correction_by_default(monkeypatch):
+    """Testes legados de rejeição não fazem uma chamada real de planejamento."""
+    monkeypatch.setattr(judge_module, "planejar_correcao_resposta", lambda _: judge_module.CorrecaoResposta(
+        acao="bloquear", especialista=None, feedback="Sem correção segura.", pergunta=None,
+    ))
+
+
+def test_intention_judge_receives_effective_arguments_and_redacted_context(monkeypatch):
+    calls = []
+    decision = AvaliacaoIntencao(
+        decisao="aprovada", apoio=0.8, motivo="Pedido explícito.", pergunta=None
+    )
+    structured = SimpleNamespace(invoke=lambda messages: calls.append(messages) or decision)
+    monkeypatch.setattr(judge_module, "llm", SimpleNamespace(with_structured_output=lambda *a, **k: structured))
+
+    result = judge_module.avaliar_intencao(
+        pergunta="Crie o formulário", intencao=Intention(tool="formularios_criar_rascunho", argumentos={"id_ciclo": 1, "titulo": "Análise"}),
+        contexto={"contato": "gestor@acta.com", "ciclos_autorizados": [1]},
+    )
+    assert result == decision
+    assert "gestor@acta.com" not in calls[0][1]["content"]
+    assert "formularios_criar_rascunho" in calls[0][1]["content"]
+    assert '"id_ciclo": 1' in calls[0][1]["content"]
+
+
+def test_intention_judge_propagates_provider_failure(monkeypatch):
+    def fail(*_):
+        raise TimeoutError("Juiz indisponível")
+
+    monkeypatch.setattr(judge_module, "llm", SimpleNamespace(with_structured_output=lambda *a, **k: SimpleNamespace(invoke=fail)))
+    with pytest.raises(TimeoutError):
+        judge_module.avaliar_intencao(pergunta="Registre", intencao=Intention(tool="x", argumentos={}), contexto={})
+
+
+def test_judge_sends_each_full_evidence_once_without_nested_duplicates(monkeypatch):
+    client = _allow_with_jev(monkeypatch)
+    result = {"status": "ok", "metas": [{"base": 100, "alvo": 80}], "detalhe": "fonte_completa_preservada"}
+    evidence = {"tool": "ciclo_relatorio_completo", "argumentos": {"id_ciclo": 1}, "resultado": result, "cache": False}
+    responses = [
+        {"especialista": name, "resposta": "Base 100, alvo 80.", "evidencias": [evidence], "intencoes": [], "interrompido": False}
+        for name in ("ciclo", "indicadores")
+    ]
+    judge_module.avaliar_resposta(
+        pergunta="Qual é a base e o alvo?", respostas_especialistas=responses,
+        evidencias_tools=[evidence, {**evidence, "cache": True}], resposta_orquestrador="Base 100, alvo 80.",
+    )
+    payload = client.calls[0]["state"]
+    assert len(payload["evidencias_tools"]) == 1
+    assert payload["evidencias_tools"][0]["resultado"] == result
+    assert all(set(response) == {"especialista", "resposta"} for response in payload["respostas_especialistas"])
+    assert str(payload).count("fonte_completa_preservada") == 1
 
 
 class FakeJevClient:
