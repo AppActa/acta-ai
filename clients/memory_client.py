@@ -33,14 +33,14 @@ def salvar_mensagem(
     )
 
 
-def obter_contexto_detalhado(session_id: str, pergunta: str = "") -> dict[str, Any]:
+def obter_contexto_detalhado(session_id: str, query: str = "") -> dict[str, Any]:
     return get_memory_service().obter_contexto(
-        current_mcp_request_context(), session_id=session_id, pergunta=pergunta
+        current_mcp_request_context(), session_id=session_id, query=query
     )
 
 
-def obter_contexto(session_id: str, pergunta: str) -> str:
-    result = obter_contexto_detalhado(session_id, pergunta)
+def obter_contexto(session_id: str, query: str = "") -> str:
+    result = obter_contexto_detalhado(session_id, query)
     return str(result.get("contexto", ""))
 
 

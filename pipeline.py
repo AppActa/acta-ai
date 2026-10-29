@@ -1,7 +1,5 @@
 """Construção e ponto de entrada da pipeline LangGraph do chatbot ACTA."""
 
-import logging
-
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
@@ -33,8 +31,6 @@ from clients.skill_client import (
     eh_pedido_criacao_skill,
     resolver_comando_skill,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def _texto_resposta(content: object) -> str:
@@ -198,7 +194,7 @@ def get_response(
     """Mantém o contrato utilizado pela API FastAPI."""
 
     return executar_fluxo_acta(
-        message,    
+        message,
         session_id,
         id_ciclo=id_ciclo,
         ciclo_ativo=ciclo_ativo,

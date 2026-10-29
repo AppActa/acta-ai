@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import socket
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -152,16 +151,12 @@ def _current_context() -> MCPRequestContext:
     context = _request_context.get()
     if context is not None:
         return context
-    try:
-        return MCPRequestContext(
-            usuario_id=ACTA_MCP_USUARIO_ID,
-            empresa_id=ACTA_MCP_EMPRESA_ID,
-            trace_id=str(uuid4()),
-        )
-    except RuntimeError as exc:
-        raise MCPActaError(
-            f"{exc} Não há contexto MCP ativo para a requisição."
-        ) from exc
+
+    return MCPRequestContext(
+        usuario_id=ACTA_MCP_USUARIO_ID,
+        empresa_id=ACTA_MCP_EMPRESA_ID,
+        trace_id=str(uuid4()),
+    )
 
 
 def current_mcp_request_context() -> MCPRequestContext:
@@ -200,7 +195,7 @@ def _is_transient_error(exc: BaseException) -> bool:
 
     if isinstance(exc, BaseExceptionGroup):
         return any(_is_transient_error(nested) for nested in exc.exceptions)
-    if isinstance(exc, (TimeoutError, ConnectionError, socket.timeout)):
+    if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
     status_code = getattr(getattr(exc, "response", None), "status_code", None)
     if status_code in {408, 429, 500, 502, 503, 504}:
@@ -269,8 +264,6 @@ async def _call_tool_async(tool_name: str, arguments: dict) -> dict | str:
                 exc,
             )
             await asyncio.sleep(0.2 * attempt)
-
-    raise MCPActaError(f"Falha inesperada ao chamar a tool MCP '{tool_name}'.")
 
 
 def _run_async_in_sync_context(tool_name: str, arguments: dict) -> dict | str:

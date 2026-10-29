@@ -43,7 +43,7 @@ def test_cycle_mcp_tools_do_not_offer_the_legacy_lesson_writer() -> None:
 def test_jev_routes_lesson_question_to_lessons_specialist(monkeypatch) -> None:
     from langchain_core.messages import HumanMessage
 
-    from agents import estado
+    from agents import roteador
 
     class FakeJevClient:
         def __enter__(self):
@@ -65,7 +65,7 @@ def test_jev_routes_lesson_question_to_lessons_specialist(monkeypatch) -> None:
                 }
             )
 
-    monkeypatch.setattr(estado, "TypeSafeClient", lambda **_kwargs: FakeJevClient())
+    monkeypatch.setattr(roteador, "TypeSafeClient", lambda **_kwargs: FakeJevClient())
     result = no_roteador(
         {
             "messages": [HumanMessage(content="O que aprendemos no ciclo 1?")],
@@ -83,7 +83,7 @@ def test_jev_router_receives_recent_context_and_logs_scores(monkeypatch, caplog)
 
     from langchain_core.messages import AIMessage, HumanMessage
 
-    from agents import estado
+    from agents import roteador
 
     calls = []
 
@@ -108,8 +108,8 @@ def test_jev_router_receives_recent_context_and_logs_scores(monkeypatch, caplog)
                 },
             )
 
-    monkeypatch.setattr(estado, "TypeSafeClient", lambda **_kwargs: FakeJevClient())
-    with caplog.at_level(logging.INFO, logger="agents.estado"):
+    monkeypatch.setattr(roteador, "TypeSafeClient", lambda **_kwargs: FakeJevClient())
+    with caplog.at_level(logging.INFO, logger="agents.roteador"):
         result = no_roteador(
             {
                 "messages": [

@@ -5,6 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 import agents.estado as state_module
+import agents.roteador as router_module
 import pipeline as pipeline_module
 from pipeline import fluxo_agentes, get_response
 from tools.ciclo_tools import ciclo_visao_geral
@@ -49,13 +50,13 @@ class FakeJevClient:
                 name: SimpleNamespace(noul=0.9 if name in self.selected else 0.1)
                 for name in questions
                 if name not in {"tipo_mensagem", "escopo_ciclos"}
-            }
+            },
         )
 
 
 def _set_jev(monkeypatch, *, message_type="negocio", selected=(), cycle_scope="ativo"):
     client = FakeJevClient(message_type, selected, cycle_scope)
-    monkeypatch.setattr(state_module, "TypeSafeClient", lambda **_kwargs: client)
+    monkeypatch.setattr(router_module, "TypeSafeClient", lambda **_kwargs: client)
     return client
 
 
@@ -144,25 +145,27 @@ def test_output_guardrail_precedes_judge_and_persists_final_answer(monkeypatch, 
     assert [item["content"] for item in saved if item["role"] == "assistant"] == [answer]
 
 
-@pytest.mark.parametrize("message_type", ["conversa", "fora_escopo"])
-def test_general_questions_use_recent_context_and_persist_answers(
-    monkeypatch,
-    message_type: str,
-) -> None:
+def test_casual_conversation_uses_recent_context_and_persists_answers(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     saved_messages = []
     prompts = []
-    monkeypatch.setattr(state_module, "_salvar_mensagem", lambda **item: saved_messages.append(item))
+    monkeypatch.setattr(
+        state_module, "_salvar_mensagem", lambda **item: saved_messages.append(item)
+    )
     monkeypatch.setattr(
         state_module,
         "guardrail_entrada",
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
-    _set_jev(monkeypatch, message_type=message_type)
+    _set_jev(monkeypatch, message_type="conversa")
 
     def answer_general(prompt: str) -> AIMessage:
         prompts.append(prompt)
-        content = "Resposta inicial" if len(prompts) == 1 else "Você perguntou sobre organização do tempo."
+        content = (
+            "Resposta inicial"
+            if len(prompts) == 1
+            else "Você perguntou sobre organização do tempo."
+        )
         return AIMessage(content=content)
 
     monkeypatch.setattr(state_module, "llm", SimpleNamespace(invoke=answer_general))
@@ -173,13 +176,13 @@ def test_general_questions_use_recent_context_and_persist_answers(
     )
     session_id = f"teste::{uuid4()}"
 
-    first_answer = get_response("Como organizar o tempo?", session_id)
+    first_answer = get_response("Oi, tudo bem?", session_id)
     followup_answer = get_response("Qual foi minha pergunta anterior?", session_id)
 
     assert first_answer == "Resposta inicial"
     assert followup_answer == "Você perguntou sobre organização do tempo."
     assert "Você é Cato, o gato laranja do ACTA" in prompts[0]
-    assert "Usuário: Como organizar o tempo?" in prompts[1]
+    assert "Usuário: Oi, tudo bem?" in prompts[1]
     assert "ACTA: Resposta inicial" in prompts[1]
     assert [item["role"] for item in saved_messages] == [
         "human",
@@ -187,6 +190,30 @@ def test_general_questions_use_recent_context_and_persist_answers(
         "human",
         "assistant",
     ]
+
+
+def test_off_scope_recipe_code_request_is_rejected_before_generation(monkeypatch) -> None:
+    _disable_external_memory(monkeypatch)
+    _set_jev(monkeypatch, message_type="fora_escopo", selected=("rag", "ciclo"))
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_entrada",
+        lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
+    )
+    generated_prompts = []
+    monkeypatch.setattr(
+        state_module,
+        "llm",
+        SimpleNamespace(invoke=lambda prompt: generated_prompts.append(prompt)),
+    )
+
+    response = get_response(
+        "me manda um codigo para fazer uma receita de macarrao com salsicha",
+        f"teste::{uuid4()}",
+    )
+
+    assert response == state_module.RESPOSTAS_TRIAGEM["fora_escopo"]
+    assert generated_prompts == []
 
 
 def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
@@ -198,9 +225,10 @@ def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
     _set_jev(monkeypatch, selected=("ciclo",))
-    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(
+        "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setitem(
         state_module.REGISTRO_ESPECIALISTAS,
@@ -222,15 +250,24 @@ def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
     assert response == "Dados do ciclo"
     system_message = cycle_agent.calls[0]["messages"][0]
     assert system_message.type == "system"
-    assert "IDs de ciclos autorizados nesta requisição, na ordem de consulta: [7]" in system_message.content
+    assert (
+        "IDs de ciclos autorizados nesta requisição, na ordem de consulta: [7]"
+        in system_message.content
+    )
 
 
 def test_get_response_accepts_legacy_single_cycle_id(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     cycle_agent = FakeAgent("Dados do ciclo")
-    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_entrada",
+        lambda _: {"valido": True, "motivo": "ok", "mensagem": ""},
+    )
     _set_jev(monkeypatch, selected=("ciclo",))
-    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(
+        "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setitem(
         state_module.REGISTRO_ESPECIALISTAS,
@@ -238,8 +275,11 @@ def test_get_response_accepts_legacy_single_cycle_id(monkeypatch) -> None:
         lambda state: state_module._executar_agente(cycle_agent, state),
     )
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr(state_module, "guardrail_saida", lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer})
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_saida",
+        lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer},
+    )
 
     response = get_response("Como está o ciclo?", f"teste::{uuid4()}", id_ciclo=7)
 
@@ -269,7 +309,11 @@ def test_comparative_question_detection(question: str, expected: bool) -> None:
 
 def test_router_uses_structured_comparative_scope_for_multiple_cycles(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_entrada",
+        lambda _: {"valido": True, "motivo": "ok", "mensagem": ""},
+    )
     jev = _set_jev(monkeypatch, selected=("ciclo",), cycle_scope="comparacao")
     cycle_agent = FakeAgent("Comparação")
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
@@ -278,9 +322,15 @@ def test_router_uses_structured_comparative_scope_for_multiple_cycles(monkeypatc
         "ciclo",
         lambda state: state_module._executar_agente(cycle_agent, state),
     )
-    monkeypatch.setattr(state_module, "guardrail_saida", lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer})
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_saida",
+        lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer},
+    )
 
-    answer = get_response("Compare os ciclos", f"teste::{uuid4()}", id_ciclo=[8, 4, 8], ciclo_ativo=4)
+    answer = get_response(
+        "Compare os ciclos", f"teste::{uuid4()}", id_ciclo=[8, 4, 8], ciclo_ativo=4
+    )
 
     assert answer == "Comparação"
     assert len(jev.calls) == 1
@@ -291,14 +341,20 @@ def test_router_uses_structured_comparative_scope_for_multiple_cycles(monkeypatc
 def test_cycle_query_without_scope_does_not_call_mcp_tools(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
     calls = []
-    monkeypatch.setattr(state_module, "guardrail_entrada", lambda _: {"valido": True, "motivo": "ok", "mensagem": ""})
+    monkeypatch.setattr(
+        state_module,
+        "guardrail_entrada",
+        lambda _: {"valido": True, "motivo": "ok", "mensagem": ""},
+    )
     monkeypatch.setattr(
         state_module,
         "guardrail_saida",
         lambda answer, _: {"valido": True, "motivo": "ok", "mensagem": answer},
     )
     _set_jev(monkeypatch, selected=("ciclo",))
-    monkeypatch.setattr(state_module, "call_acta_tool", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        state_module, "call_acta_tool", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
     cycle_agent = FakeAgent("Informe o ciclo pelo título ou descrição.")
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setitem(
@@ -376,10 +432,13 @@ def test_router_can_call_multiple_specialists(monkeypatch) -> None:
         lambda _: {"valido": True, "motivo": "aprovado", "mensagem": ""},
     )
     _set_jev(monkeypatch, selected=("ciclo", "tarefas"))
-    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.tarefas_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(
+        "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
+    monkeypatch.setattr(
+        "tools.tarefas_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setattr(state_module, "tarefas_agent", tasks_agent)
     monkeypatch.setitem(
@@ -438,10 +497,13 @@ def test_orchestrator_always_uses_llm_for_multiple_answers(monkeypatch) -> None:
         lambda state: state_module._executar_agente(state_module.tarefas_agent, state),
     )
     _set_jev(monkeypatch, selected=("ciclo", "tarefas"))
-    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.tarefas_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(
+        "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
+    monkeypatch.setattr(
+        "tools.tarefas_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "orquestrador", orchestrator)
     monkeypatch.setattr(
         state_module,
@@ -466,11 +528,11 @@ def test_orchestrator_always_uses_llm_for_multiple_answers(monkeypatch) -> None:
 def test_langchain_tool_forwards_to_mcp_client(monkeypatch) -> None:
     calls = []
 
-    def fake_call(name: str, **arguments):
+    def fake_call(name: str, arguments: dict):
         calls.append((name, arguments))
         return {"status": "ok"}
 
-    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", fake_call)
+    monkeypatch.setattr("tools.ciclo_tools.call_acta_tool", fake_call)
 
     response = ciclo_visao_geral.invoke({"id_ciclo": 3})
 
@@ -481,11 +543,11 @@ def test_langchain_tool_forwards_to_mcp_client(monkeypatch) -> None:
 def test_form_tool_forwards_to_mcp_client(monkeypatch) -> None:
     calls = []
 
-    def fake_call(name: str, **arguments):
+    def fake_call(name: str, arguments: dict):
         calls.append((name, arguments))
         return {"status": "ok", "total_respostas": 2}
 
-    monkeypatch.setattr("tools.formulario_tools.call_mcp_tool", fake_call)
+    monkeypatch.setattr("tools.formulario_tools.call_acta_tool", fake_call)
 
     response = formularios_resumo_respostas.invoke({"id_ciclo": 3, "id_formulario": "f-1"})
 
@@ -501,11 +563,11 @@ def test_form_tool_forwards_to_mcp_client(monkeypatch) -> None:
 def test_report_tool_forwards_to_mcp_client(monkeypatch) -> None:
     calls = []
 
-    def fake_call(name: str, **arguments):
+    def fake_call(name: str, arguments: dict):
         calls.append((name, arguments))
         return {"status": "ok", "somente_leitura": True}
 
-    monkeypatch.setattr("tools.relatorio_tools.call_mcp_tool", fake_call)
+    monkeypatch.setattr("tools.relatorio_tools.call_acta_tool", fake_call)
 
     response = relatorios_contexto_ciclo.invoke({"id_ciclo": 3})
 
@@ -518,9 +580,10 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     specialist = FakeAgent("Fatos originais do ciclo")
     orchestrator = FakeAgent("Resposta formatada pela skill")
     jev = _set_jev(monkeypatch, selected=("ciclo",))
-    monkeypatch.setattr("tools.ciclo_tools.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(
+        "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
+    )
     monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
-    monkeypatch.setattr("tools.common.call_mcp_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(
         pipeline_module,
         "resolver_comando_skill",
@@ -574,8 +637,9 @@ def test_active_skill_is_included_in_general_response_prompt(monkeypatch) -> Non
         state_module,
         "llm",
         SimpleNamespace(
-            invoke=lambda prompt: prompts.append(prompt)
-            or AIMessage(content="Resposta formatada pela skill")
+            invoke=lambda prompt: (
+                prompts.append(prompt) or AIMessage(content="Resposta formatada pela skill")
+            )
         ),
     )
 
@@ -663,8 +727,10 @@ def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch)
     monkeypatch.setattr(
         state_module,
         "call_acta_tool",
-        lambda name, arguments: tool_calls.append((name, arguments))
-        or {"status": "ok", "resposta": "Resumo das lições.", "referencias": [2]},
+        lambda name, arguments: (
+            tool_calls.append((name, arguments))
+            or {"status": "ok", "resposta": "Resumo das lições.", "referencias": [2]}
+        ),
     )
     monkeypatch.setattr(
         state_module,

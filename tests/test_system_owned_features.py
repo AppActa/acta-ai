@@ -88,8 +88,8 @@ def test_conversation_memory_facades_call_the_system_service(monkeypatch):
     with mcp_acta_client.mcp_request_context(usuario_id=7, empresa_id=3):
         memory_client.garantir_sessao("s")
         memory_client.salvar_mensagem(session_id="s", role="human", content="Oi", agent="teste")
-        assert memory_client.obter_contexto_detalhado("s", "Oi")["contexto"] == "contexto"
-        assert memory_client.obter_contexto("s", "Oi") == "contexto"
+        assert memory_client.obter_contexto_detalhado("s")["contexto"] == "contexto"
+        assert memory_client.obter_contexto("s") == "contexto"
         assert memory_client.obter_material_resumo("s")["deve_resumir"] is True
         assert memory_client.encerrar_sessao("s") is True
         assert memory_client.listar_chats()[0]["session_id"] == "s"

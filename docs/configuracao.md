@@ -20,11 +20,15 @@
 | `ACTA_MCP_URL` | URL Streamable HTTP do MCP, normalmente `http://127.0.0.1:8000/mcp`. |
 | `ACTA_MCP_API_KEY` | Credencial compartilhada entre os serviços. |
 | `ACTA_MCP_TIMEOUT_SECONDS` | Tempo máximo de uma chamada MCP. |
-| `ACTA_MCP_MAX_ATTEMPTS` | Número de tentativas para falhas transitórias. |
-| `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID` | Identidade padrão apenas para uso fora das rotas HTTP. |
-| `MONGODB_URI` e `ACTA_SYSTEM_FEATURES_DB_NAME` | MongoDB das conversas, memórias e skills pessoais. |
+| `ACTA_MCP_MAX_ATTEMPTS` | Número de tentativas para falhas transitórias; padrão `2`. |
+| `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID` | Identidade padrão apenas para uso fora das rotas HTTP; padrão `0`. |
+| `MONGODB_URI` e `ACTA_SYSTEM_FEATURES_DB_NAME` | MongoDB das conversas, memórias e skills pessoais; banco padrão `acta`. |
+| `ACTA_MEMORY_RECENT_MESSAGES` | Mensagens recentes incluídas no contexto; padrão `30`. |
+| `ACTA_MEMORY_SUMMARY_EVERY_MESSAGES` | Limiar para resumir a conversa; padrão `12`. |
 | `GEMINI_API_KEY` | Embeddings de memória e geração das lições aprendidas. |
 | `QDRANT_CLUSTER_ENDPOINT` e `QDRANT_API_KEY` | Índice semântico opcional para memória. |
+| `QDRANT_MEMORY_MESSAGES_COLLECTION_NAME` | Collection vetorial de mensagens; padrão `memoria_mensagens`. |
+| `QDRANT_MEMORY_VECTOR_SIZE` e `QDRANT_TIMEOUT_SECONDS` | Dimensão dos embeddings (padrão `768`) e timeout do Qdrant (padrão `10` segundos). |
 
 Os parâmetros de modelos, guardrails e especialistas estão
 documentados no `.env.example`. Nunca versione o `.env` real.

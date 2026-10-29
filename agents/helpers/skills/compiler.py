@@ -51,14 +51,6 @@ def _normalized_for_detection(value: str) -> str:
     )
 
 
-def _slugify(name: str) -> str:
-    normalized = _normalized_for_detection(name)
-    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
-    if not slug or len(slug) > 64:
-        raise ValueError("O nome da skill deve gerar um comando de até 64 caracteres.")
-    return slug
-
-
 def _validate_safe_text(value: str) -> None:
     if any(pattern.search(value) for pattern in _PII_PATTERNS):
         raise ValueError("A skill não pode conter dados pessoais.")
@@ -114,7 +106,11 @@ def parse_skill_markdown(content: str) -> SkillDefinition:
         raise ValueError("As regras devem ter no máximo 3000 caracteres.")
 
     _validate_safe_text("\n".join((name, objective, rules)))
-    slug = _slugify(name)
+    slug = re.sub(r"[^a-z0-9]+", "-", _normalized_for_detection(name)).strip("-")
+
+    if not slug or len(slug) > 64:
+        raise ValueError("O nome da skill deve gerar um comando de até 64 caracteres.")
+
     canonical = f"# {name}\n\n# objetivo\n\n{objective}\n\n# regras\n\n{rules}"
     return SkillDefinition(
         nome=name,

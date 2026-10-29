@@ -6,8 +6,8 @@ import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from agents.estado import consolidar_memoria
 from agents.helpers.errors import AuthorizationError, NotFoundError
+from agents.memoria import consolidar_memoria
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
@@ -56,8 +56,6 @@ class ChatRequest(BaseModel):
     @field_validator("id_ciclo")
     @classmethod
     def _normalizar_ciclos(cls, cycles: list[int]) -> list[int]:
-        if len(cycles) > 20:
-            raise ValueError("id_ciclo aceita no máximo 20 ciclos.")
         if any(cycle <= 0 for cycle in cycles):
             raise ValueError("id_ciclo deve conter somente inteiros positivos.")
         return list(dict.fromkeys(cycles))

@@ -119,5 +119,3 @@ PERGUNTA_ORIGINAL=Gere um resumo executivo do ciclo atual.
 
 Não adicione nenhum outro texto.
 """
-
-_PROMPT_ROTEADOR = ROUTER_PROMPT_COMPLETO

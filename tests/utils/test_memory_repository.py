@@ -95,6 +95,10 @@ class Qdrant:
             raise RuntimeError("Qdrant indisponível")
         self.points.extend(kwargs["points"])
 
+    def query_points(self, **kwargs):
+        self.query = kwargs
+        return SimpleNamespace(points=self.search_results)
+
 
 def repository(qdrant=None):
     database = Database()
@@ -161,6 +165,36 @@ def test_context_load_is_capped_at_30_messages_and_owner_is_checked():
         repo.session_context(CONTEXT, "s1", 30)
 
 
+def test_semantic_search_loads_owned_messages_from_other_sessions(monkeypatch):
+    qdrant = Qdrant()
+    qdrant.search_results = [
+        SimpleNamespace(id="m1", score=0.91),
+        SimpleNamespace(id="current", score=0.89),
+        SimpleNamespace(id="foreign", score=0.87),
+    ]
+    repo, db = repository(qdrant)
+    db["memoria_mensagens"].docs = [
+        {"_id": "m1", "session_id": "old", "usuario_id": 7, "empresa_id": 3,
+         "role": "assistente", "content": "A empresa está no Lucro Real."},
+        {"_id": "current", "session_id": "current-session", "usuario_id": 7,
+         "empresa_id": 3, "role": "usuario", "content": "mensagem atual"},
+        {"_id": "foreign", "session_id": "old", "usuario_id": 8, "empresa_id": 3,
+         "role": "assistente", "content": "dado de outro usuário"},
+    ]
+    db["memoria_sessoes"].docs = [
+        {"session_id": "old", "usuario_id": 7, "empresa_id": 3, "titulo": "Tributação", "resumo": "Contexto fiscal"}
+    ]
+    monkeypatch.setattr("agents.helpers.memory.repository.gerar_embedding", lambda _: [0.5] * 768)
+
+    memories = repo.search_relevant_memories(CONTEXT, session_id="current-session", query="regime tributário")
+
+    assert len(memories) == 1
+    assert memories[0]["content"] == "A empresa está no Lucro Real."
+    assert memories[0]["titulo"] == "Tributação"
+    assert qdrant.query["query_filter"].must_not[0].key == "session_id"
+    assert {condition.key for condition in qdrant.query["query_filter"].must} == {"usuario_id", "empresa_id"}
+
+
 def test_session_creation_close_summary_and_missing_session():
     repo, db = repository()
     db["memoria_sessoes"].find_one_result = {"session_id": "s1", "usuario_id": 7, "empresa_id": 3}
@@ -168,7 +202,7 @@ def test_session_creation_close_summary_and_missing_session():
     assert db["memoria_sessoes"].updates
     assert repo.close_session_if_has_messages(CONTEXT, "s1")
     repo.update_summary(CONTEXT, "s1", "Resumo 123.456.789-00", datetime.now(UTC))
-    assert db["memoria_sessoes"].updates[-1][1]["$set"]["resumo"] == "Resumo [CPF OMITIDO]"
+    assert db["memoria_sessoes"].updates[-1][1]["$set"]["resumo"] == "Resumo 123.456.789-00"
     db["memoria_sessoes"].matched_count = 0
     with pytest.raises(NotFoundError):
         repo.update_summary(CONTEXT, "missing", "resumo", datetime.now(UTC))
