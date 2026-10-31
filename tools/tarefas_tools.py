@@ -47,6 +47,28 @@ def tarefas_consultar(
 
 
 @tool
+def tarefas_resumo_entre_ciclos() -> dict | str:
+    """Mostra totais de tarefas nos ciclos aos quais o usuário autenticado tem acesso."""
+    return call_acta_tool("tarefas_resumo_entre_ciclos", {})
+
+
+@tool
+def tarefas_consultar_entre_ciclos(
+    id_responsavel: int | None = None,
+    status: StatusTarefa | None = None,
+    prioridade: PrioridadeTarefa | None = None,
+    limit: int = 50,
+) -> dict | str:
+    """Consulta uma lista limitada de tarefas entre ciclos autorizados."""
+    return call_acta_tool("tarefas_consultar_entre_ciclos", {
+        "id_responsavel": id_responsavel,
+        "status": status,
+        "prioridade": prioridade,
+        "limit": limit,
+    })
+
+
+@tool
 def tarefas_atrasadas(id_ciclo: int, limit: int = 50) -> dict | str:
     """Lista tarefas atrasadas ou vencidas de um ciclo autorizado."""
 
@@ -78,10 +100,10 @@ def tarefas_concluidas(
 
 
 @tool
-def tarefas_detalhes(id_tarefa: int) -> dict | str:
+def tarefas_detalhes(id_tarefa: int, id_ciclo: int) -> dict | str:
     """Consulta detalhes, dependências e bloqueios de uma tarefa autorizada."""
 
-    return call_acta_tool("tarefas_detalhes", {"id_tarefa": id_tarefa})
+    return call_acta_tool("tarefas_detalhes", {"id_tarefa": id_tarefa, "id_ciclo": id_ciclo})
 
 
 @tool
@@ -151,6 +173,7 @@ def tarefas_criar(
 @tool
 def tarefas_atualizar(
     id_tarefa: int,
+    id_ciclo: int,
     titulo: str | None = None,
     descricao: str | None = None,
     id_responsavel: int | None = None,
@@ -162,6 +185,7 @@ def tarefas_atualizar(
         "tarefas_atualizar",
         {
             "id_tarefa": id_tarefa,
+            "id_ciclo": id_ciclo,
             "titulo": titulo,
             "descricao": descricao,
             "id_responsavel": id_responsavel,
@@ -172,12 +196,14 @@ def tarefas_atualizar(
 
 
 @tool
-def tarefas_atualizar_status(id_tarefa: int, status: StatusTarefa) -> dict | str:
+def tarefas_atualizar_status(id_tarefa: int, id_ciclo: int, status: StatusTarefa) -> dict | str:
     """Atualiza o status de uma tarefa quando solicitado explicitamente."""
-    return call_acta_tool("tarefas_atualizar_status", {"id_tarefa": id_tarefa, "status": status})
+    return call_acta_tool("tarefas_atualizar_status", {"id_tarefa": id_tarefa, "id_ciclo": id_ciclo, "status": status})
 
 
 TOOLS = [
+    tarefas_resumo_entre_ciclos,
+    tarefas_consultar_entre_ciclos,
     tarefas_consultar,
     tarefas_atrasadas,
     tarefas_concluidas,

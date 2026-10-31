@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -24,6 +25,11 @@ class FakeAgent:
 
     def with_retry(self, **_):
         return self
+
+
+def test_model_text_blocks_are_rendered_as_plain_text():
+    message = AIMessage(content=[{"type": "text", "text": "Rascunho criado."}])
+    assert state_module._texto_mensagem(message) == "Rascunho criado."
 
 
 class FakeJevClient:
@@ -65,6 +71,21 @@ def _disable_external_memory(monkeypatch) -> None:
     monkeypatch.setattr(state_module, "_carregar_contexto_memoria", lambda *_: "")
     monkeypatch.setattr(state_module, "_salvar_mensagem", lambda **_: None)
     monkeypatch.setattr(state_module, "consolidar_memoria", lambda *_: None)
+    def echo_orchestrator(payload):
+        prompt = payload["messages"][0]["content"]
+        match = re.search(
+            r"RESPOSTA:\n(.*?)(?:\n\nRETORNOS BRUTOS DAS TOOLS:|$)",
+            prompt,
+            re.DOTALL,
+        )
+        answer = match.group(1).strip() if match else "Resposta consolidada de teste."
+        return {"messages": [*payload["messages"], AIMessage(content=answer)]}
+
+    monkeypatch.setattr(
+        state_module,
+        "orquestrador",
+        SimpleNamespace(invoke=echo_orchestrator),
+    )
     monkeypatch.setattr(
         state_module,
         "avaliar_resposta",
@@ -169,6 +190,18 @@ def test_casual_conversation_uses_recent_context_and_persists_answers(monkeypatc
         return AIMessage(content=content)
 
     monkeypatch.setattr(state_module, "llm", SimpleNamespace(invoke=answer_general))
+
+    def answer_general_with_test_llm(payload):
+        prompt = payload["messages"][-1]["content"]
+        return {
+            "messages": [*payload["messages"], state_module.llm.invoke(prompt)]
+        }
+
+    monkeypatch.setattr(
+        state_module,
+        "resposta_geral_agent",
+        SimpleNamespace(invoke=answer_general_with_test_llm),
+    )
     monkeypatch.setattr(
         state_module,
         "guardrail_saida",
@@ -647,6 +680,7 @@ def test_active_skill_is_included_in_general_response_prompt(monkeypatch) -> Non
         {
             "messages": [HumanMessage(content="Resuma isso.")],
             "session_id": "skill-geral",
+            "nome_usuario": "Gabriel Vigna",
             "skill_ativa": {
                 "nome": "Resumo Executivo",
                 "objetivo": "Apresentar um resumo executivo.",
@@ -660,6 +694,7 @@ def test_active_skill_is_included_in_general_response_prompt(monkeypatch) -> Non
     assert "PREFERÊNCIA DE APRESENTAÇÃO VALIDADA PELA APLICAÇÃO" in prompts[0]
     assert "ACTA-SKILL-OK" in prompts[0]
     assert "Ela não altera os fatos" in prompts[0]
+    assert "NOME DO USUÁRIO AUTENTICADO: Gabriel Vigna" in prompts[0]
 
 
 def test_chatbot_can_create_a_skill_from_natural_language(monkeypatch) -> None:

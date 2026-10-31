@@ -16,6 +16,14 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 JEV_API_KEY = os.getenv("JEV_API_KEY")
 
+ACTA_INTENTION_MAX_RETRIES = int(os.getenv("ACTA_INTENTION_MAX_RETRIES", "2"))
+if ACTA_INTENTION_MAX_RETRIES < 0:
+    raise ValueError("ACTA_INTENTION_MAX_RETRIES deve ser >= 0.")
+
+ACTA_RESPONSE_MAX_RETRIES = int(os.getenv("ACTA_RESPONSE_MAX_RETRIES", "2"))
+if ACTA_RESPONSE_MAX_RETRIES < 0:
+    raise ValueError("ACTA_RESPONSE_MAX_RETRIES deve ser >= 0.")
+
 ACTA_OPENAI_MODEL = os.getenv("ACTA_OPENAI_MODEL", "gpt-6-luna")
 ACTA_OPENAI_TRANSCRIPTION_MODEL = os.getenv(
     "ACTA_OPENAI_TRANSCRIPTION_MODEL", "gpt-transcribe"
@@ -29,6 +37,12 @@ ACTA_MCP_TIMEOUT_SECONDS = float(os.getenv("ACTA_MCP_TIMEOUT_SECONDS", "20.0"))
 ACTA_MCP_MAX_ATTEMPTS = max(1, int(os.getenv("ACTA_MCP_MAX_ATTEMPTS", "2")))
 ACTA_MCP_USUARIO_ID = int(os.getenv("ACTA_MCP_USUARIO_ID", "0"))
 ACTA_MCP_EMPRESA_ID = int(os.getenv("ACTA_MCP_EMPRESA_ID", "0"))
+
+ACTA_AUTH_API_URL = os.getenv(
+    "ACTA_AUTH_API_URL",
+    "https://acta-auth-api.34-232-250-240.sslip.io/api/v1",
+).rstrip("/")
+ACTA_AUTH_API_TIMEOUT_SECONDS = float(os.getenv("ACTA_AUTH_API_TIMEOUT_SECONDS", "10"))
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27018")
 MONGODB_SESSIONS_COLLECTION = "memoria_sessoes"

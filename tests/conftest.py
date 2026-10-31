@@ -3,3 +3,4 @@
 import os
 
 os.environ.setdefault("OPENAI_API_KEY", "test-only-not-a-real-secret")
+os.environ.setdefault("LANGSMITH_TRACING", "false")

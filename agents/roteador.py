@@ -17,8 +17,9 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
         "Perguntas conceituais sobre PDCA pertencem a rag mesmo sem mencionar ACTA."
     ),
     "ciclo": (
-        "Somente consultar dados reais registrados para um ciclo específico do ACTA: "
-        "fase, status, riscos ou andamento. Não deve ser escolhido para explicar o método "
+        "Consultar dados reais de um ciclo específico do ACTA: fase, status, riscos ou "
+        "andamento; também registrar causas raiz, adicionar itens ao Ishikawa ou criar "
+        "treinamentos quando solicitado. Não deve ser escolhido para explicar o método "
         "PDCA, suas etapas ou conceitos gerais. Exemplos: 'Como está o ciclo 12?', "
         "'Qual a fase atual do ciclo 12?'"
     ),
@@ -30,16 +31,19 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
         "'Quais lições foram registradas?'"
     ),
     "tarefas": (
-        "Consultar ou acompanhar tarefas registradas: responsáveis, prazos, atrasos, "
-        "dependências ou justificativas. Exemplos: 'Quais tarefas estão atrasadas?'"
+        "Consultar, criar ou atualizar tarefas e seus status: responsáveis, prazos, atrasos, "
+        "dependências ou justificativas. Exemplos: 'Quais tarefas estão atrasadas?', "
+        "'Crie uma tarefa' e 'Atualize o status da tarefa'."
     ),
     "colaboradores": (
         "Consultar colaboradores, competências, disponibilidade, carga ou realocação. "
         "Exemplos: 'Quem está disponível?', 'Como está a carga da equipe?'"
     ),
     "formularios": (
-        "Consultar formulários respondidos, respostas, padrões ou ocorrências registradas. "
-        "Exemplos: 'Quais ocorrências apareceram nas respostas?'"
+        "Consultar formulários respondidos, respostas, padrões ou ocorrências registradas; "
+        "também criar formulários em rascunho, adicionar perguntas e publicar formulários. "
+        "Exemplos: 'Quais ocorrências apareceram nas respostas?', 'Crie um formulário' "
+        "e 'Publique o formulário'. Inclui pedidos de criação com dados ainda incompletos."
     ),
     "indicadores": (
         "Consultar metas, indicadores, valores base ou alvo, atingimento e limitações "

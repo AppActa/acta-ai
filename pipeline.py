@@ -127,6 +127,7 @@ def executar_fluxo_acta(
     session_id: str,
     id_ciclo: int | list[int] | None = None,
     ciclo_ativo: int | None = None,
+    nome_usuario: str | None = None,
 ) -> str:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
@@ -160,6 +161,7 @@ def executar_fluxo_acta(
         "contexto_memoria": "",
         "resposta_final": "",
         "skill_ativa": active_skill,
+        "nome_usuario": nome_usuario,
     }
     query_scope = cycle_ids
     if ciclo_ativo is not None and not _pergunta_comparativa(question):
@@ -190,6 +192,7 @@ def get_response(
     session_id: str,
     id_ciclo: int | list[int] | None = None,
     ciclo_ativo: int | None = None,
+    nome_usuario: str | None = None,
 ) -> str:
     """Mantém o contrato utilizado pela API FastAPI."""
 
@@ -198,4 +201,5 @@ def get_response(
         session_id,
         id_ciclo=id_ciclo,
         ciclo_ativo=ciclo_ativo,
+        nome_usuario=nome_usuario,
     )

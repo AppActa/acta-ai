@@ -20,7 +20,11 @@
 | `ACTA_MCP_URL` | URL Streamable HTTP do MCP, normalmente `http://127.0.0.1:8000/mcp`. |
 | `ACTA_MCP_API_KEY` | Credencial compartilhada entre os serviços. |
 | `ACTA_MCP_TIMEOUT_SECONDS` | Tempo máximo de uma chamada MCP. |
-| `ACTA_MCP_MAX_ATTEMPTS` | Número de tentativas para falhas transitórias; padrão `2`. |
+| `ACTA_MCP_MAX_ATTEMPTS` | Tentativas de transporte de consultas; padrão `2`. Escritas usam uma única tentativa. |
+| `ACTA_AUTH_API_URL` | Base da Auth API, incluindo `/api/v1`; padrão aponta para o serviço ACTA publicado. |
+| `ACTA_AUTH_API_TIMEOUT_SECONDS` | Tempo máximo para validar o token e buscar `/contexto`; padrão `10` segundos. |
+| `ACTA_INTENTION_MAX_RETRIES` | Correções da proposta de escrita; padrão `2` (inicial + duas correções). Inteiro >= 0. |
+| `ACTA_RESPONSE_MAX_RETRIES` | Correções da resposta final; padrão `2` (avaliação inicial + até duas correções). Revisões permitem somente consultas. Inteiro >= 0. |
 | `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID` | Identidade padrão apenas para uso fora das rotas HTTP; padrão `0`. |
 | `MONGODB_URI` e `ACTA_SYSTEM_FEATURES_DB_NAME` | MongoDB das conversas, memórias e skills pessoais; banco padrão `acta`. |
 | `ACTA_MEMORY_RECENT_MESSAGES` | Mensagens recentes incluídas no contexto; padrão `30`. |
@@ -49,4 +53,45 @@ uv run ruff check .
 ```
 
 Alguns testes de integração e especialistas dependem de variáveis e serviços
-opcionais; a suíte informa explicitamente os testes ignorados.
+opcionais; a suíte informa explicitamente os testes ignorados. Para os testes de
+conversa completos, defina `ACTA_FIREBASE_ID_TOKEN` com um Firebase ID Token válido
+para o usuário de teste configurado na Auth API.
+
+### Integração local de transações
+
+`tests/test_intention_integration.py` usa a API local `http://127.0.0.1:8201`,
+o MCP local `http://127.0.0.1:8001/mcp` e o MongoDB de fixtures `localhost:27018`.
+Ative com `ACTA_RUN_INTENTION_INTEGRATION=1` após iniciar as fixtures PostgreSQL/MongoDB
+do repositório MCP em um projeto Docker Compose separado. Configure a API/MCP com
+esses bancos locais, sem apontar para dados externos.
+
+```powershell
+$env:ACTA_FIREBASE_ID_TOKEN = "<FIREBASE_ID_TOKEN_DO_USUARIO_DE_TESTE>"
+$env:ACTA_RUN_INTENTION_INTEGRATION = "1"
+uv run pytest tests/test_intention_integration.py -q -s
+```
+
+Esses testes criam rascunhos de formulário e tarefas e alteram o status das tarefas
+criadas. O teste verifica os dados reais via MongoDB e MCP. JEV, OpenAI e, nas
+integrações de lições existentes, Gemini precisam estar disponíveis.
+
+### Conversas completas com o perfil de teste 1
+
+`tests/test_chat_flow_integration.py` acrescenta conversa com continuação,
+histórico, pedidos incompletos e análise de metas/tarefas. Todas as mensagens usam
+`usuario_id=1`, `empresa_id=1`, `id_ciclo=[1]` e `ciclo_ativo=1`.
+
+As fixtures devem estar no projeto Compose `acta-chat-flow-test`, iniciado no
+repositório MCP com `docker compose -p acta-chat-flow-test up -d --wait`. Os testes
+conferem diretamente o contêiner `acta-chat-flow-test-postgres-1`, além do MongoDB
+local, e usam os mesmos endereços de API/MCP acima.
+
+As chamadas HTTP a rotas protegidas também precisam de um Firebase ID Token válido;
+os testes unitários isolam a Auth API com contexto de identidade de teste.
+
+```powershell
+$env:ACTA_FIREBASE_ID_TOKEN = "<FIREBASE_ID_TOKEN_DO_USUARIO_DE_TESTE>"
+$env:ACTA_RUN_INTENTION_INTEGRATION = "1"
+$env:ACTA_RUN_CHAT_FLOW_INTEGRATION = "1"
+uv run pytest tests/test_intention_integration.py tests/test_chat_flow_integration.py -q -s
+```

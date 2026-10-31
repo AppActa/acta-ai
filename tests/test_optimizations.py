@@ -1,5 +1,4 @@
 import asyncio
-import threading
 from types import SimpleNamespace
 
 import pytest
@@ -26,13 +25,13 @@ def _state(*specialists: str) -> dict:
     }
 
 
-def test_specialists_run_in_parallel_and_keep_mcp_context(monkeypatch) -> None:
+def test_specialists_run_in_order_and_keep_mcp_context(monkeypatch) -> None:
     monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "false")
-    barrier = threading.Barrier(2, timeout=1)
+    order = []
 
     def executor(_estado: dict) -> str:
         context = mcp_client._current_context()
-        barrier.wait()
+        order.append(len(order) + 1)
         return f"{context.usuario_id}:{context.empresa_id}:{context.trace_id}"
 
     monkeypatch.setattr(
@@ -50,6 +49,7 @@ def test_specialists_run_in_parallel_and_keep_mcp_context(monkeypatch) -> None:
 
     assert [item["especialista"] for item in responses] == ["primeiro", "segundo"]
     assert {item["resposta"] for item in responses} == {"7:9:trace-paralelo"}
+    assert order == [1, 2]
 
 
 @pytest.mark.parametrize("specialist", ["ciclo", "indicadores"])
@@ -87,11 +87,11 @@ def test_mcp_cache_is_limited_to_request_context(monkeypatch) -> None:
     monkeypatch.setattr(mcp_client, "_run_async_in_sync_context", fake_call)
 
     with mcp_request_context(usuario_id=1, empresa_id=1), mcp_client.mcp_tool_cache_context():
-        first = mcp_client.call_acta_tool("tool_teste", {"b": 2, "a": 1})
-        second = mcp_client.call_acta_tool("tool_teste", {"a": 1, "b": 2})
+        first = mcp_client.call_acta_tool("ciclo_visao_geral", {"b": 2, "a": 1})
+        second = mcp_client.call_acta_tool("ciclo_visao_geral", {"a": 1, "b": 2})
 
     with mcp_request_context(usuario_id=1, empresa_id=1), mcp_client.mcp_tool_cache_context():
-        third = mcp_client.call_acta_tool("tool_teste", {"a": 1, "b": 2})
+        third = mcp_client.call_acta_tool("ciclo_visao_geral", {"a": 1, "b": 2})
 
     assert first == second == {"status": "ok", "numero": 1}
     assert third == {"status": "ok", "numero": 2}
@@ -114,8 +114,8 @@ def test_mcp_records_real_and_cached_tool_evidence(monkeypatch) -> None:
         mcp_client.mcp_tool_cache_context(),
         mcp_client.mcp_tool_evidence_context() as evidence,
     ):
-        mcp_client.call_acta_tool("tool_teste", {"id_ciclo": 1})
-        mcp_client.call_acta_tool("tool_teste", {"id_ciclo": 1})
+        mcp_client.call_acta_tool("ciclo_visao_geral", {"id_ciclo": 1})
+        mcp_client.call_acta_tool("ciclo_visao_geral", {"id_ciclo": 1})
 
     assert len(evidence) == 2
     assert evidence[0]["cache"] is False
@@ -136,7 +136,7 @@ def test_mcp_retries_only_transient_failures(monkeypatch) -> None:
     monkeypatch.setenv("ACTA_MCP_MAX_ATTEMPTS", "2")
     monkeypatch.setattr(mcp_client, "_call_tool_once", temporary_failure)
 
-    assert asyncio.run(mcp_client._call_tool_async("tool_teste", {})) == {"status": "ok"}
+    assert asyncio.run(mcp_client._call_tool_async("ciclo_visao_geral", {})) == {"status": "ok"}
     assert calls == 2
 
 
@@ -158,7 +158,7 @@ def test_mcp_does_not_retry_non_transient_failures(monkeypatch) -> None:
     monkeypatch.setattr(mcp_client, "_call_tool_once", permanent_failure)
 
     with pytest.raises(mcp_client.MCPActaError, match="argumento inválido"):
-        asyncio.run(mcp_client._call_tool_async("tool_teste", {}))
+        asyncio.run(mcp_client._call_tool_async("ciclo_visao_geral", {}))
     assert calls == 1
 
 

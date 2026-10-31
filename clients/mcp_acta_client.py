@@ -55,6 +55,13 @@ _discovered_cycle_scope: ContextVar[set[int] | None] = ContextVar(
     "acta_ai_discovered_cycle_scope",
     default=None,
 )
+CROSS_CYCLE_READ_TOOLS = frozenset({
+    "tarefas_resumo_entre_ciclos",
+    "tarefas_consultar_entre_ciclos",
+    "licoes_listar_entre_ciclos",
+    "licoes_resumir_entre_ciclos",
+    "licoes_perguntar_entre_ciclos",
+})
 
 
 @contextmanager
@@ -249,7 +256,11 @@ async def _call_tool_once(tool_name: str, arguments: dict) -> dict | str:
 
 
 async def _call_tool_async(tool_name: str, arguments: dict) -> dict | str:
+    from agents.execucao import TOOLS_LEITURA
+
     max_attempts = max(1, int(os.getenv("ACTA_MCP_MAX_ATTEMPTS", str(ACTA_MCP_MAX_ATTEMPTS))))
+    if tool_name not in TOOLS_LEITURA:
+        max_attempts = 1
     for attempt in range(1, max_attempts + 1):
         try:
             return await _call_tool_once(tool_name, arguments)
@@ -316,13 +327,29 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     is_cycle_discovery = tool_name == "ciclos_buscar_por_descricao"
     if (
         allowed_cycles is not None
-        and tool_name not in {"faq_retriever", "ciclos_buscar_por_descricao"}
+        and tool_name not in {"faq_retriever", "ciclos_buscar_por_descricao", *CROSS_CYCLE_READ_TOOLS}
         and sanitized.get("id_ciclo") not in (allowed_cycles | discovered_cycles)
     ):
         result = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
         _record_tool_evidence(tool_name, sanitized, result, cached=False)
         return result
-    cache = _request_cache.get()
+    from agents.execucao import TOOLS_LEITURA, avaliar_transacao
+
+    is_read = tool_name in TOOLS_LEITURA
+    if not is_read:
+        # O wrapper já resolveu defaults/contexto. O juiz recebe o payload efetivo.
+        intention, evaluation = avaliar_transacao(tool_name, sanitized)
+        if evaluation.decisao == "corrigir_proposta":
+            return {
+                "status": "corrigir_proposta",
+                "motivo": evaluation.motivo,
+                "intencao": intention.model_dump(),
+                "instrucao": "Corrija a proposta com os dados disponíveis e proponha novamente. Nada foi executado.",
+            }
+        sanitized = intention.argumentos
+
+    # Escritas nunca usam cache: cada aprovação corresponde a uma chamada real.
+    cache = _request_cache.get() if is_read else None
     cache_key = json.dumps(
         [tool_name, sanitized],
         sort_keys=True,
@@ -346,6 +373,12 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
             {"status": "error", "tipo": type(exc).__name__},
             cached=False,
         )
+        if not is_read:
+            from agents.intencao import ExecucaoBloqueada
+
+            raise ExecucaoBloqueada(
+                "Não consegui confirmar o resultado da alteração. A operação não foi repetida automaticamente."
+            ) from exc
         raise
     if cache is not None:
         cache[cache_key] = result

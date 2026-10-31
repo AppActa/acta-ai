@@ -6,7 +6,7 @@ Assistente gerencial do ACTA para apoiar o ciclo **PDCA** (*Plan, Do, Check, Act
 
 O `acta-ai` recebe mensagens por uma API HTTP, executa um fluxo de agentes com LangGraph e consulta operações de domínio pelo [servidor ACTA MCP](https://github.com/AppActa/acta-mcp). Ele também mantém histórico de conversas, memórias e skills pessoais no MongoDB; o Qdrant pode indexar esses dados para busca semântica.
 
-O roteador direciona cada solicitação a especialistas de ciclos, tarefas, colaboradores, formulários, indicadores, relatórios, lições aprendidas ou FAQ. Um orquestrador consolida os resultados, e o juiz verifica se a resposta está apoiada pelas evidências recebidas antes da revisão de saída.
+O roteador direciona cada solicitação a especialistas de ciclos, tarefas, colaboradores, formulários, indicadores, relatórios, lições aprendidas ou FAQ. Antes de qualquer escrita de domínio, o juiz avalia a intenção (ferramenta e argumentos): só executa com decisão aprovada e apoio >= 0.7. Pode pedir até duas correções ou solicitar esclarecimento sem executar. Consultas continuam no fluxo atual. Um orquestrador consolida os resultados; após o guardrail de saída, o juiz final verifica a resposta contra as evidências. Se houver inconsistência, pode solicitar até duas correções ao especialista responsável ou ao orquestrador, ou pedir esclarecimento ao usuário. A revisão da resposta permite somente consultas para evitar repetir gravações.
 
 ## ✨ Funcionalidades
 
@@ -29,7 +29,11 @@ flowchart LR
     IN --> MEM[Contexto e memória]
     MEM --> R[Roteador LangGraph]
     R --> ESP[Especialistas]
-    ESP --> MCP[ACTA MCP]
+    ESP -->|Consulta| MCP[ACTA MCP]
+    ESP -->|Proposta de escrita| JI[Juiz da intenção]
+    JI -->|Aprovada e apoio >= 0.7| MCP
+    JI -->|Corrigir: até 2 vezes| ESP
+    JI -->|Esclarecimento ou bloqueio| OUT
     MCP --> ESP
     ESP --> J[Orquestrador e juiz]
     J --> OUT[Guardrail de saída]
@@ -40,7 +44,7 @@ flowchart LR
 
 As conversas e memórias canônicas ficam no MongoDB. Quando Qdrant e a chave Gemini estão configurados, embeddings apoiam a busca semântica; sem esse índice, a recuperação usa mensagens recentes do MongoDB. O histórico de execução do LangGraph fica em memória de processo e não substitui a persistência das conversas.
 
-As rotas HTTP recebem `usuario_id` e `empresa_id` no corpo ou na query e usam esses valores para criar o contexto da requisição. Este repositório não implementa autenticação HTTP nas rotas FastAPI. Em produção, exponha a API atrás de um gateway ou serviço que autentique o chamador e derive os identificadores da identidade verificada; não aceite esses IDs diretamente de clientes não confiáveis. Nas chamadas de domínio, o ACTA MCP recebe os identificadores nos cabeçalhos e valida perfil, empresa e acesso ao ciclo.
+As rotas HTTP protegidas exigem um Firebase ID Token no cabeçalho `Authorization`. O `acta-ai` valida o token com a Auth API e deriva `usuario_id` e `empresa_id` do contexto retornado; identificadores enviados pelo cliente não definem a identidade da requisição. Nas chamadas de domínio, o ACTA MCP recebe os identificadores verificados nos cabeçalhos e valida perfil, empresa e acesso ao ciclo. `GET /health` permanece público.
 
 ## 🛠️ Tecnologias
 
@@ -61,7 +65,7 @@ As versões de bibliotecas são as resolvidas no arquivo [`uv.lock`](uv.lock). A
 
 ## ✅ Pré-requisitos e configuração
 
-Para executar localmente, tenha Python 3.11 ou superior, [uv](https://docs.astral.sh/uv/), um MongoDB acessível e um servidor [ACTA MCP](https://github.com/AppActa/acta-mcp) acessível. O fluxo de conversa também requer credenciais válidas para OpenAI e JEV. Gemini e Qdrant são usados para busca semântica de memória.
+Para executar localmente, tenha Python 3.11 ou superior, [uv](https://docs.astral.sh/uv/), um MongoDB acessível, a [Auth API](https://github.com/AppActa/acta-auth-api) e um servidor [ACTA MCP](https://github.com/AppActa/acta-mcp) acessíveis. O cliente que chama as rotas protegidas deve enviar um Firebase ID Token válido. O fluxo de conversa também requer credenciais válidas para OpenAI e JEV. Gemini e Qdrant são usados para busca semântica de memória.
 
 Crie um arquivo `.env` local a partir do exemplo e substitua os valores de demonstração por credenciais do seu ambiente:
 
@@ -74,6 +78,8 @@ Copy-Item .env.example .env
 | `OPENAI_API_KEY` | Modelo de chat e transcrição de áudio. |
 | `JEV_API_KEY` | Guardrails de entrada e saída e avaliação da resposta. |
 | `ACTA_MCP_URL`, `ACTA_MCP_API_KEY` | Endpoint e credencial de serviço do ACTA MCP. O endpoint padrão é `http://127.0.0.1:8000/mcp`. |
+| `ACTA_AUTH_API_URL` | Base da Auth API, incluindo `/api/v1`; usada para validar o Firebase ID Token em `/contexto`. |
+| `ACTA_AUTH_API_TIMEOUT_SECONDS` | Tempo limite da validação de identidade; padrão de 10 segundos. |
 | `MONGODB_URI` | Banco de conversas e memórias; o padrão local é `mongodb://127.0.0.1:27018`. |
 | `GEMINI_API_KEY`, `QDRANT_CLUSTER_ENDPOINT`, `QDRANT_API_KEY` | Configuração da busca semântica em mensagens. Sem Qdrant, o contexto usa as mensagens recentes do MongoDB. |
 | `ACTA_OPENAI_MODEL`, `ACTA_OPENAI_TRANSCRIPTION_MODEL` | Modelos usados; padrões `gpt-6-luna` e `gpt-transcribe`. |

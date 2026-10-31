@@ -1,7 +1,10 @@
 # Referência da API HTTP
 
-Todos os identificadores numéricos devem ser positivos. A documentação OpenAPI
-interativa está em `/docs` quando a aplicação está em execução.
+As rotas protegidas exigem `Authorization: Bearer <FIREBASE_ID_TOKEN>`. O `acta-ai`
+valida o token com a Auth API em `GET /api/v1/contexto` e deriva os IDs de usuário e
+empresa desse contexto verificado. Os campos `usuario_id` e `empresa_id` enviados por
+clientes são ignorados. A documentação OpenAPI interativa está em `/docs` quando a
+aplicação está em execução.
 
 ## Saúde
 
@@ -9,6 +12,9 @@ interativa está em `/docs` quando a aplicação está em execução.
 
 Retorna que a API do ACTA AI está ativa. Essa rota não verifica a saúde dos serviços
 internos; para isso, consulte `GET /health` no MCP.
+
+As demais rotas exigem um Firebase ID Token válido e um perfil ACTA ativo. Se a Auth
+API estiver indisponível, a requisição falha sem executar a operação.
 
 ## Conversas
 
@@ -18,11 +24,11 @@ internos; para isso, consulte `GET /health` no MCP.
 
 ```json
 {
-  "usuario_id": 1,
-  "empresa_id": 1,
   "session_id_atual": "opcional"
 }
 ```
+
+Envie `Authorization: Bearer <FIREBASE_ID_TOKEN>` no cabeçalho.
 
 Sempre devolve um novo UUID ainda não persistido. Ele só passa a existir no MongoDB
 quando a primeira mensagem é salva. Se `session_id_atual` for enviado, a API tenta
@@ -46,8 +52,6 @@ mensagens. Portanto, uma conversa vazia não é criada, resumida nem listada.
 {
   "message": "Quais tarefas estão atrasadas?",
   "session_id": "uuid",
-  "usuario_id": 1,
-  "empresa_id": 1,
   "id_ciclo": [12, 15],
   "ciclo_ativo": 12
 }
@@ -66,7 +70,7 @@ assistente são persistidas pelo fluxo da conversa.
 
 ### Listar conversas
 
-`GET /listar_chats?usuario_id=1&empresa_id=1&limit=50`
+`GET /listar_chats?limit=50`
 
 Retorna somente conversas não vazias pertencentes ao usuário dentro da empresa. Cada
 item inclui `session_id`, `titulo`, estado, contagem de mensagens e datas de atividade.
@@ -76,16 +80,16 @@ entre 1 e 100.
 
 ### Listar mensagens de uma conversa
 
-`GET /chats/{session_id}/mensagens?usuario_id=1&empresa_id=1&limit=30`
+`GET /chats/{session_id}/mensagens?limit=30`
 
 Retorna as mensagens mais recentes da sessão em ordem cronológica. `limit` é opcional,
 usa 30 por padrão e aceita valores entre 1 e 100. A sessão precisa pertencer ao
-usuário e à empresa informados; uma sessão inexistente retorna 404.
+usuário e à empresa do token; uma sessão inexistente retorna 404.
 
 ### Áudio
 
 `POST /chat/audio` recebe `multipart/form-data` com `audio`,
-`session_id`, `usuario_id`, `empresa_id`, um `id_ciclo`
+`session_id`, um `id_ciclo`
 legado ou até 20 campos `id_ciclo`, e
 `ciclo_ativo` opcional. O ciclo legado é normalizado para lista; IDs duplicados são
 removidos mantendo a ordem da primeira ocorrência. O ciclo ativo, se informado,
@@ -100,9 +104,9 @@ automática; veja [Histórico de conversas](memoria.md).
 
 ## Skills personalizadas
 
-- `POST /skills` recebe `usuario_id`, `empresa_id` e `conteudo_markdown`.
-- `GET /skills?usuario_id=1&empresa_id=1&limit=50` lista as skills privadas.
-- `DELETE /skills/{nome}?usuario_id=1&empresa_id=1` remove uma skill.
+- `POST /skills` recebe `conteudo_markdown`.
+- `GET /skills?limit=50` lista as skills privadas.
+- `DELETE /skills/{nome}` remove uma skill.
 
 Uma skill é um contrato Markdown restrito com `# nome`, `# objetivo` e `# regras`.
 Ela orienta a apresentação da resposta e não concede acesso adicional a dados ou
