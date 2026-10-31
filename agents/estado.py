@@ -248,12 +248,51 @@ def _executar_rag(estado: Estado) -> str:
     return responder_faq(question)
 
 
+def _executar_licoes_entre_ciclos(
+    question: str,
+    normalized: str,
+    feedback: str | None,
+) -> str:
+    if any(marker in normalized for marker in ("resuma", "resumo das licoes", "sintetize as licoes")):
+        tool_name = "licoes_resumir_entre_ciclos"
+        arguments: dict[str, Any] = {"limit": 200}
+    elif any(marker in normalized for marker in ("liste", "listar", "quais licoes", "lista de licoes")):
+        tool_name = "licoes_listar_entre_ciclos"
+        arguments = {"limit": 50, "offset": 0}
+    else:
+        tool_name = "licoes_perguntar_entre_ciclos"
+        arguments = {"pergunta": question, "limit": 200}
+        if feedback:
+            arguments["pergunta"] += f"\nRevisão solicitada: {feedback}"
+
+    result = call_acta_tool(tool_name, arguments)
+    if not isinstance(result, dict):
+        return "Não foi possível consultar lições entre ciclos no momento."
+
+    if result.get("status") == "sem_licoes":
+        return "Ainda não há lições aprendidas registradas entre os ciclos autorizados."
+    if result.get("status") == "sem_evidencia":
+        return "Não encontrei lições com evidências suficientes para responder essa pergunta."
+    if result.get("status") == "ok":
+        return json.dumps(result, ensure_ascii=False, default=str)
+
+    return "Não foi possível consultar lições entre ciclos no momento."
+
+
 def _executar_licoes(estado: Estado) -> str:
     with mcp_discovered_cycle_scope_context():
         user_message = _ultima_mensagem(estado, "human")
         question = _texto_mensagem(user_message) if user_message else ""
         normalized = _normalizar_texto(question)
         query_ids = _ciclos_para_consulta(estado)
+
+        if not query_ids and estado.get("escopo_ciclos") in {"todos", "comparacao"}:
+            return _executar_licoes_entre_ciclos(
+                question,
+                normalized,
+                estado.get("feedback_juiz"),
+            )
+
         if not query_ids:
             search = call_acta_tool(
                 "ciclos_buscar_por_descricao",

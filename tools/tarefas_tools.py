@@ -47,6 +47,28 @@ def tarefas_consultar(
 
 
 @tool
+def tarefas_resumo_entre_ciclos() -> dict | str:
+    """Mostra totais de tarefas nos ciclos aos quais o usuário autenticado tem acesso."""
+    return call_acta_tool("tarefas_resumo_entre_ciclos", {})
+
+
+@tool
+def tarefas_consultar_entre_ciclos(
+    id_responsavel: int | None = None,
+    status: StatusTarefa | None = None,
+    prioridade: PrioridadeTarefa | None = None,
+    limit: int = 50,
+) -> dict | str:
+    """Consulta uma lista limitada de tarefas entre ciclos autorizados."""
+    return call_acta_tool("tarefas_consultar_entre_ciclos", {
+        "id_responsavel": id_responsavel,
+        "status": status,
+        "prioridade": prioridade,
+        "limit": limit,
+    })
+
+
+@tool
 def tarefas_atrasadas(id_ciclo: int, limit: int = 50) -> dict | str:
     """Lista tarefas atrasadas ou vencidas de um ciclo autorizado."""
 
@@ -180,6 +202,8 @@ def tarefas_atualizar_status(id_tarefa: int, id_ciclo: int, status: StatusTarefa
 
 
 TOOLS = [
+    tarefas_resumo_entre_ciclos,
+    tarefas_consultar_entre_ciclos,
     tarefas_consultar,
     tarefas_atrasadas,
     tarefas_concluidas,

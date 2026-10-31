@@ -50,6 +50,36 @@ def test_mcp_call_without_cycle_id_is_rejected_inside_cycle_scope(monkeypatch) -
     assert calls == []
 
 
+def test_explicit_cross_cycle_read_is_allowed_without_cycle_argument(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        mcp_acta_client,
+        "_run_async_in_sync_context",
+        lambda name, arguments: calls.append((name, arguments)) or {"status": "ok"},
+    )
+
+    with mcp_acta_client.mcp_cycle_scope_context([8, 4]):
+        result = mcp_acta_client.call_acta_tool("tarefas_resumo_entre_ciclos", {})
+
+    assert result == {"status": "ok"}
+    assert calls == [("tarefas_resumo_entre_ciclos", {})]
+
+
+def test_scope_exception_does_not_allow_cross_cycle_write(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        mcp_acta_client,
+        "_run_async_in_sync_context",
+        lambda *args: calls.append(args) or {"status": "ok"},
+    )
+
+    with mcp_acta_client.mcp_cycle_scope_context([8, 4]):
+        result = mcp_acta_client.call_acta_tool("tarefas_criar", {})
+
+    assert result["status"] == "forbidden"
+    assert calls == []
+
+
 def test_faq_tool_is_exempt_from_cycle_scope_and_still_propagates_errors(monkeypatch) -> None:
     error = RuntimeError("FAQ indisponível")
 

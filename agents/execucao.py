@@ -29,13 +29,15 @@ TOOLS_LEITURA = frozenset({
     "ciclo_problema_principal", "ciclo_causas_raiz", "ciclo_ishikawa",
     "ciclo_riscos_pendencias", "ciclo_treinamentos", "ciclo_participantes",
     "ciclo_relatorio_completo", "tarefas_consultar", "tarefas_atrasadas",
+    "tarefas_resumo_entre_ciclos", "tarefas_consultar_entre_ciclos",
     "tarefas_concluidas", "tarefas_detalhes", "tarefas_por_responsavel",
     "tarefas_alertas_prazo", "tarefas_relatorio_completo", "colaboradores_consultar",
     "colaborador_detalhes", "colaboradores_participantes_ciclo", "colaboradores_por_area",
     "colaboradores_carga_trabalho", "colaboradores_sugestao_realocacao",
     "colaboradores_relatorio_completo", "formularios_listar", "formularios_detalhes",
     "formularios_respostas", "formularios_resumo_respostas", "relatorios_contexto_ciclo",
-    "licoes_resumir", "licoes_perguntar",
+    "licoes_resumir", "licoes_perguntar", "licoes_listar_entre_ciclos",
+    "licoes_resumir_entre_ciclos", "licoes_perguntar_entre_ciclos",
 })
 
 

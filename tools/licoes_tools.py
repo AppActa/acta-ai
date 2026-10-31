@@ -40,4 +40,31 @@ def consultar_licoes_aprendidas(pergunta: str) -> dict[str, Any]:
     return call_acta_tool("licoes_perguntar", {"id_ciclo": _cycle(), "pergunta": pergunta})
 
 
-TOOLS = [criar_licao_aprendida, resumir_licoes_aprendidas, consultar_licoes_aprendidas]
+@tool
+def listar_licoes_entre_ciclos(limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Lista lições aprendidas nos ciclos autorizados do usuário."""
+    return call_acta_tool("licoes_listar_entre_ciclos", {"limit": limit, "offset": offset})
+
+
+@tool
+def resumir_licoes_entre_ciclos(limit: int = 200) -> dict[str, Any]:
+    """Resume lições aprendidas entre ciclos autorizados."""
+    return call_acta_tool("licoes_resumir_entre_ciclos", {"limit": limit})
+
+
+@tool
+def consultar_licoes_entre_ciclos(pergunta: str, limit: int = 200) -> dict[str, Any]:
+    """Responde usando lições entre ciclos autorizados e informa ciclo de cada referência."""
+    return call_acta_tool(
+        "licoes_perguntar_entre_ciclos", {"pergunta": pergunta, "limit": limit}
+    )
+
+
+TOOLS = [
+    criar_licao_aprendida,
+    resumir_licoes_aprendidas,
+    consultar_licoes_aprendidas,
+    listar_licoes_entre_ciclos,
+    resumir_licoes_entre_ciclos,
+    consultar_licoes_entre_ciclos,
+]

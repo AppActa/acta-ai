@@ -255,3 +255,44 @@ def test_lesson_revision_keeps_comparison_scope_and_feedback(monkeypatch):
     assert [args["id_ciclo"] for _, args in calls] == [1, 3]
     assert all(name == "licoes_perguntar" for name, _ in calls)
     assert all("Explique as diferenças" in args["pergunta"] for _, args in calls)
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_tool", "expected_arguments"),
+    [
+        (
+            "Liste as lições entre todos os ciclos",
+            "licoes_listar_entre_ciclos",
+            {"limit": 50, "offset": 0},
+        ),
+        (
+            "Resuma as lições entre todos os ciclos",
+            "licoes_resumir_entre_ciclos",
+            {"limit": 200},
+        ),
+        (
+            "O que aprendemos entre todos os ciclos?",
+            "licoes_perguntar_entre_ciclos",
+            {"pergunta": "O que aprendemos entre todos os ciclos?", "limit": 200},
+        ),
+    ],
+)
+def test_lesson_request_between_all_cycles_uses_cross_cycle_tool(
+    monkeypatch, question, expected_tool, expected_arguments
+):
+    calls = []
+    monkeypatch.setattr(
+        state,
+        "call_acta_tool",
+        lambda name, args: calls.append((name, args))
+        or {"status": "sem_licoes"},
+    )
+
+    result = state._executar_licoes({
+        "messages": [HumanMessage(content=question)],
+        "id_ciclo": [],
+        "escopo_ciclos": "todos",
+    })
+
+    assert calls == [(expected_tool, expected_arguments)]
+    assert "não há lições" in result.casefold()

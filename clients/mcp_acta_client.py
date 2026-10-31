@@ -55,6 +55,13 @@ _discovered_cycle_scope: ContextVar[set[int] | None] = ContextVar(
     "acta_ai_discovered_cycle_scope",
     default=None,
 )
+CROSS_CYCLE_READ_TOOLS = frozenset({
+    "tarefas_resumo_entre_ciclos",
+    "tarefas_consultar_entre_ciclos",
+    "licoes_listar_entre_ciclos",
+    "licoes_resumir_entre_ciclos",
+    "licoes_perguntar_entre_ciclos",
+})
 
 
 @contextmanager
@@ -320,7 +327,7 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     is_cycle_discovery = tool_name == "ciclos_buscar_por_descricao"
     if (
         allowed_cycles is not None
-        and tool_name not in {"faq_retriever", "ciclos_buscar_por_descricao"}
+        and tool_name not in {"faq_retriever", "ciclos_buscar_por_descricao", *CROSS_CYCLE_READ_TOOLS}
         and sanitized.get("id_ciclo") not in (allowed_cycles | discovered_cycles)
     ):
         result = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
