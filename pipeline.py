@@ -55,8 +55,6 @@ def _normalizar_ids_ciclo(id_ciclo: int | list[int] | None) -> list[int]:
     if id_ciclo is None:
         return []
     raw_ids = [id_ciclo] if isinstance(id_ciclo, int) else id_ciclo
-    if len(raw_ids) > 20:
-        raise ValueError("id_ciclo aceita no máximo 20 ciclos.")
     if any(not isinstance(cycle_id, int) or cycle_id <= 0 for cycle_id in raw_ids):
         raise ValueError("id_ciclo deve conter somente inteiros positivos.")
     return list(dict.fromkeys(raw_ids))
