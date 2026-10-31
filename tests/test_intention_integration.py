@@ -10,16 +10,25 @@ from pymongo import MongoClient
 from clients.mcp_acta_client import call_acta_tool, mcp_request_context
 
 pytestmark = pytest.mark.skipif(
-    os.getenv("ACTA_RUN_INTENTION_INTEGRATION") != "1",
-    reason="Requer API local :8201, MCP :8001 e fixtures Docker :27018.",
+    os.getenv("ACTA_RUN_INTENTION_INTEGRATION") != "1"
+    or not os.getenv("ACTA_FIREBASE_ID_TOKEN"),
+    reason="Requer ACTA_FIREBASE_ID_TOKEN, API local :8201, MCP :8001 e fixtures Docker :27018.",
 )
+AUTH_HEADERS = {"Authorization": f"Bearer {os.getenv('ACTA_FIREBASE_ID_TOKEN', '')}"}
 
 
 def chat(question, session=None):
-    response = httpx.post("http://127.0.0.1:8201/chat", json={
-        "message": question, "session_id": session or f"intention-test::{uuid4()}",
-        "usuario_id": 1, "empresa_id": 1, "id_ciclo": [1], "ciclo_ativo": 1,
-    }, timeout=180)
+    response = httpx.post(
+        "http://127.0.0.1:8201/chat",
+        headers=AUTH_HEADERS,
+        json={
+            "message": question,
+            "session_id": session or f"intention-test::{uuid4()}",
+            "id_ciclo": [1],
+            "ciclo_ativo": 1,
+        },
+        timeout=180,
+    )
     assert response.status_code == 200, response.text
     answer = response.json()["resposta"]
     print(f"\nPERGUNTA: {question}\nRESPOSTA: {answer}")
@@ -30,7 +39,11 @@ def chat(question, session=None):
 
 def test_live_health_and_validation():
     assert httpx.get("http://127.0.0.1:8201/health").status_code == 200
-    assert httpx.post("http://127.0.0.1:8201/chat", json={}).status_code == 422
+    assert httpx.post(
+        "http://127.0.0.1:8201/chat",
+        headers=AUTH_HEADERS,
+        json={},
+    ).status_code == 422
 
 
 @pytest.mark.parametrize("question,terms", [

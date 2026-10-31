@@ -38,6 +38,12 @@ ACTA_MCP_MAX_ATTEMPTS = max(1, int(os.getenv("ACTA_MCP_MAX_ATTEMPTS", "2")))
 ACTA_MCP_USUARIO_ID = int(os.getenv("ACTA_MCP_USUARIO_ID", "0"))
 ACTA_MCP_EMPRESA_ID = int(os.getenv("ACTA_MCP_EMPRESA_ID", "0"))
 
+ACTA_AUTH_API_URL = os.getenv(
+    "ACTA_AUTH_API_URL",
+    "https://acta-auth-api.34-232-250-240.sslip.io/api/v1",
+).rstrip("/")
+ACTA_AUTH_API_TIMEOUT_SECONDS = float(os.getenv("ACTA_AUTH_API_TIMEOUT_SECONDS", "10"))
+
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27018")
 MONGODB_SESSIONS_COLLECTION = "memoria_sessoes"
 MONGODB_MESSAGES_COLLECTION = "memoria_mensagens"

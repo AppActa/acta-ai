@@ -1,13 +1,16 @@
 """API HTTP do chatbot ACTA."""
 
 import uuid
+from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.helpers.errors import AuthorizationError, NotFoundError
 from agents.memoria import consolidar_memoria
+from clients.auth_api_client import AuthApiError, AuthContext, get_auth_context
 from clients.client_transcricao import transcrever_audio
 from clients.mcp_acta_client import mcp_request_context
 from clients.memory_client import (
@@ -28,11 +31,43 @@ app = FastAPI(
     description="API do chatbot gerencial do ACTA",
     version="1.1.1",
 )
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def require_auth_context(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(_bearer_scheme),
+    ],
+) -> AuthContext:
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Envie um Firebase ID Token no cabeçalho Authorization.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        return get_auth_context(credentials.credentials)
+    except AuthApiError as exc:
+        detail = {
+            401: "Token de acesso inválido ou expirado.",
+            403: "A identidade não possui um perfil ACTA ativo.",
+            502: "A Auth API retornou uma resposta inválida.",
+            503: "Não foi possível validar a identidade no momento.",
+        }.get(exc.status_code, "Não foi possível validar a identidade.")
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=detail,
+            headers=headers,
+        ) from exc
+
+
+CurrentAuthContext = Annotated[AuthContext, Depends(require_auth_context)]
 
 
 class NovaSessaoRequest(BaseModel):
-    usuario_id: int = Field(..., gt=0)
-    empresa_id: int = Field(..., gt=0)
     session_id_atual: str | None = Field(default=None, min_length=1)
 
 
@@ -41,8 +76,6 @@ class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     id_ciclo: list[int] = Field(default_factory=list, max_length=20)
     ciclo_ativo: int | None = Field(default=None, gt=0)
-    usuario_id: int = Field(..., gt=0)
-    empresa_id: int = Field(..., gt=0)
 
     @field_validator("id_ciclo", mode="before")
     @classmethod
@@ -68,15 +101,19 @@ class ChatRequest(BaseModel):
 
 
 class CriarSkillRequest(BaseModel):
-    usuario_id: int = Field(..., gt=0)
-    empresa_id: int = Field(..., gt=0)
     conteudo_markdown: str = Field(..., min_length=1, max_length=5000)
 
 
-def _responder_chat(request: ChatRequest, *, message: str, session_id: str) -> str:
+def _responder_chat(
+    request: ChatRequest,
+    auth_context: AuthContext,
+    *,
+    message: str,
+    session_id: str,
+) -> str:
     with mcp_request_context(
-        usuario_id=request.usuario_id,
-        empresa_id=request.empresa_id,
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
     ):
         try:
             return get_response(
@@ -95,13 +132,16 @@ def root() -> dict[str, str]:
 
 
 @app.post("/nova_conversa")
-def nova_conversa(request: NovaSessaoRequest) -> dict[str, int | str | bool]:
+def nova_conversa(
+    request: NovaSessaoRequest,
+    auth_context: CurrentAuthContext,
+) -> dict[str, int | str | bool]:
     """Encerra uma conversa não vazia e devolve um identificador ainda não persistido."""
 
     session_id = str(uuid.uuid4())
     with mcp_request_context(
-        usuario_id=request.usuario_id,
-        empresa_id=request.empresa_id,
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
     ):
         if request.session_id_atual:
             consolidada = consolidar_memoria(request.session_id_atual, forcar=True)
@@ -109,27 +149,32 @@ def nova_conversa(request: NovaSessaoRequest) -> dict[str, int | str | bool]:
         else:
             encerrada = False
     return {
-        "usuario_id": request.usuario_id,
-        "empresa_id": request.empresa_id,
+        "usuario_id": auth_context.id_usuario,
+        "empresa_id": auth_context.id_empresa,
         "session_id": session_id,
         "conversa_anterior_encerrada": encerrada,
     }
 
 
 @app.get("/listar_chats")
-def consultar_chats(usuario_id: int, empresa_id: int, limit: int = 50) -> dict:
-    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+def consultar_chats(auth_context: CurrentAuthContext, limit: int = 50) -> dict:
+    with mcp_request_context(
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
+    ):
         return {"chats": listar_chats(limit=limit)}
 
 
 @app.get("/chats/{session_id}/mensagens")
 def consultar_mensagens(
     session_id: str,
-    usuario_id: int,
-    empresa_id: int,
+    auth_context: CurrentAuthContext,
     limit: int = Query(default=30, ge=1, le=100),
 ) -> dict:
-    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+    with mcp_request_context(
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
+    ):
         try:
             messages = listar_mensagens(session_id, limit=limit)
         except NotFoundError as exc:
@@ -140,7 +185,7 @@ def consultar_mensagens(
 
 
 @app.post("/chat")
-def chat(request: ChatRequest) -> dict[str, str]:
+def chat(request: ChatRequest, auth_context: CurrentAuthContext) -> dict[str, str]:
     message = request.message.strip()
     session_id = request.session_id.strip()
     if not message:
@@ -148,15 +193,19 @@ def chat(request: ChatRequest) -> dict[str, str]:
     if not session_id:
         raise HTTPException(status_code=400, detail="O parâmetro 'session_id' é obrigatório.")
 
-    response = _responder_chat(request, message=message, session_id=session_id)
+    response = _responder_chat(
+        request,
+        auth_context,
+        message=message,
+        session_id=session_id,
+    )
     return {"session_id": session_id, "resposta": response}
 
 @app.post("/chat/audio")
 async def chat_audio(
-    audio: UploadFile = File(...),  # noqa: B008 - marcador exigido pelo FastAPI
+    auth_context: CurrentAuthContext,
     session_id: str = Form(..., min_length=1),
-    usuario_id: int = Form(..., gt=0),
-    empresa_id: int = Form(..., gt=0),
+    audio: UploadFile = File(...),  # noqa: B008 - marcador exigido pelo FastAPI
     id_ciclo: list[int] = Form(default_factory=list),  # noqa: B008 - default de formulário
     ciclo_ativo: int | None = Form(default=None, gt=0),
 ) -> dict[str, str]:
@@ -166,8 +215,6 @@ async def chat_audio(
             session_id=session_id,
             id_ciclo=id_ciclo,
             ciclo_ativo=ciclo_ativo,
-            usuario_id=usuario_id,
-            empresa_id=empresa_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -194,7 +241,12 @@ async def chat_audio(
             detail="Não foi possível transcrever o áudio.",
         )
 
-    resposta = _responder_chat(scope, message=transcricao, session_id=session_id)
+    resposta = _responder_chat(
+        scope,
+        auth_context,
+        message=transcricao,
+        session_id=session_id,
+    )
 
     return {
         "session_id": session_id,
@@ -204,12 +256,15 @@ async def chat_audio(
 
 
 @app.post("/skills")
-def criar_skill_personalizada(request: CriarSkillRequest) -> dict:
+def criar_skill_personalizada(
+    request: CriarSkillRequest,
+    auth_context: CurrentAuthContext,
+) -> dict:
     """Cria ou atualiza uma skill no formato Markdown seguro."""
 
     with mcp_request_context(
-        usuario_id=request.usuario_id,
-        empresa_id=request.empresa_id,
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
     ):
         try:
             return {"skill": criar_skill(request.conteudo_markdown)}
@@ -218,20 +273,22 @@ def criar_skill_personalizada(request: CriarSkillRequest) -> dict:
 
 
 @app.get("/skills")
-def consultar_skills(usuario_id: int, empresa_id: int, limit: int = 50) -> dict:
-    with mcp_request_context(usuario_id=usuario_id, empresa_id=empresa_id):
+def consultar_skills(auth_context: CurrentAuthContext, limit: int = 50) -> dict:
+    with mcp_request_context(
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
+    ):
         return {"skills": listar_skills(limit=limit)}
 
 
 @app.delete("/skills/{nome}")
 def apagar_skill(
     nome: str,
-    usuario_id: int,
-    empresa_id: int,
+    auth_context: CurrentAuthContext,
 ) -> dict:
     with mcp_request_context(
-        usuario_id=usuario_id,
-        empresa_id=empresa_id,
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
     ):
         try:
             return excluir_skill(nome)

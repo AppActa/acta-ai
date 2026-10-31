@@ -21,6 +21,8 @@
 | `ACTA_MCP_API_KEY` | Credencial compartilhada entre os serviços. |
 | `ACTA_MCP_TIMEOUT_SECONDS` | Tempo máximo de uma chamada MCP. |
 | `ACTA_MCP_MAX_ATTEMPTS` | Tentativas de transporte de consultas; padrão `2`. Escritas usam uma única tentativa. |
+| `ACTA_AUTH_API_URL` | Base da Auth API, incluindo `/api/v1`; padrão aponta para o serviço ACTA publicado. |
+| `ACTA_AUTH_API_TIMEOUT_SECONDS` | Tempo máximo para validar o token e buscar `/contexto`; padrão `10` segundos. |
 | `ACTA_INTENTION_MAX_RETRIES` | Correções da proposta de escrita; padrão `2` (inicial + duas correções). Inteiro >= 0. |
 | `ACTA_RESPONSE_MAX_RETRIES` | Correções da resposta final; padrão `2` (avaliação inicial + até duas correções). Revisões permitem somente consultas. Inteiro >= 0. |
 | `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID` | Identidade padrão apenas para uso fora das rotas HTTP; padrão `0`. |
@@ -51,7 +53,9 @@ uv run ruff check .
 ```
 
 Alguns testes de integração e especialistas dependem de variáveis e serviços
-opcionais; a suíte informa explicitamente os testes ignorados.
+opcionais; a suíte informa explicitamente os testes ignorados. Para os testes de
+conversa completos, defina `ACTA_FIREBASE_ID_TOKEN` com um Firebase ID Token válido
+para o usuário de teste configurado na Auth API.
 
 ### Integração local de transações
 
@@ -62,6 +66,7 @@ do repositório MCP em um projeto Docker Compose separado. Configure a API/MCP c
 esses bancos locais, sem apontar para dados externos.
 
 ```powershell
+$env:ACTA_FIREBASE_ID_TOKEN = "<FIREBASE_ID_TOKEN_DO_USUARIO_DE_TESTE>"
 $env:ACTA_RUN_INTENTION_INTEGRATION = "1"
 uv run pytest tests/test_intention_integration.py -q -s
 ```
@@ -81,7 +86,11 @@ repositório MCP com `docker compose -p acta-chat-flow-test up -d --wait`. Os te
 conferem diretamente o contêiner `acta-chat-flow-test-postgres-1`, além do MongoDB
 local, e usam os mesmos endereços de API/MCP acima.
 
+As chamadas HTTP a rotas protegidas também precisam de um Firebase ID Token válido;
+os testes unitários isolam a Auth API com contexto de identidade de teste.
+
 ```powershell
+$env:ACTA_FIREBASE_ID_TOKEN = "<FIREBASE_ID_TOKEN_DO_USUARIO_DE_TESTE>"
 $env:ACTA_RUN_INTENTION_INTEGRATION = "1"
 $env:ACTA_RUN_CHAT_FLOW_INTEGRATION = "1"
 uv run pytest tests/test_intention_integration.py tests/test_chat_flow_integration.py -q -s

@@ -10,18 +10,20 @@ import pytest
 from pymongo import MongoClient
 
 pytestmark = pytest.mark.skipif(
-    os.getenv("ACTA_RUN_CHAT_FLOW_INTEGRATION") != "1",
-    reason="Requer API/MCP e fixtures locais do fluxo completo em Docker.",
+    os.getenv("ACTA_RUN_CHAT_FLOW_INTEGRATION") != "1"
+    or not os.getenv("ACTA_FIREBASE_ID_TOKEN"),
+    reason="Requer ACTA_FIREBASE_ID_TOKEN, API/MCP e fixtures locais do fluxo completo em Docker.",
 )
 API = "http://127.0.0.1:8201"
+AUTH_HEADERS = {"Authorization": f"Bearer {os.getenv('ACTA_FIREBASE_ID_TOKEN', '')}"}
 
 
 def chat(question, session=None):
     payload = {
         "message": question, "session_id": session or f"full-chat::{uuid4()}",
-        "usuario_id": 1, "empresa_id": 1, "id_ciclo": [1], "ciclo_ativo": 1,
+        "id_ciclo": [1], "ciclo_ativo": 1,
     }
-    response = httpx.post(f"{API}/chat", json=payload, timeout=180)
+    response = httpx.post(f"{API}/chat", headers=AUTH_HEADERS, json=payload, timeout=180)
     assert response.status_code == 200, response.text
     answer = response.json()["resposta"]
     print(f"\nSESSÃO: {payload['session_id']}\nPERGUNTA: {question}\nRESPOSTA: {answer}")
@@ -39,7 +41,12 @@ def task_snapshot():
 
 
 def test_dialogue_requests_missing_data_then_creates_once_and_keeps_history():
-    response = httpx.post(f"{API}/nova_conversa", json={"usuario_id": 1, "empresa_id": 1}, timeout=15)
+    response = httpx.post(
+        f"{API}/nova_conversa",
+        headers=AUTH_HEADERS,
+        json={},
+        timeout=15,
+    )
     assert response.status_code == 200
     session = response.json()["session_id"]
     title = f"Formulário conversa {uuid4().hex[:8]}"
@@ -55,7 +62,11 @@ def test_dialogue_requests_missing_data_then_creates_once_and_keeps_history():
         answer = chat("Qual título eu acabei de pedir para esse formulário?", session)
         assert title.casefold() in answer.casefold()
 
-    history = httpx.get(f"{API}/chats/{session}/mensagens", params={"usuario_id": 1, "empresa_id": 1}, timeout=15)
+    history = httpx.get(
+        f"{API}/chats/{session}/mensagens",
+        headers=AUTH_HEADERS,
+        timeout=15,
+    )
     assert history.status_code == 200
     messages = history.json()["mensagens"]
     assert len(messages) == 6

@@ -8,7 +8,7 @@ publicadas pelo MCP, que aplica autorização e isolamento de tenant.
 
 | Componente | Responsabilidade |
 | --- | --- |
-| `main.py` | API FastAPI, validação dos contratos HTTP e contexto da requisição. |
+| `main.py` | API FastAPI, validação do Firebase ID Token via Auth API e contexto da requisição. |
 | `pipeline.py` | Grafo LangGraph e histórico em memória de processo por sessão. |
 | `agents/estado.py` | Nós do fluxo, roteamento, especialistas, memória e avaliação. |
 | `agents/guardrail.py` | Anonimização de PII e bloqueios de segurança. |
@@ -21,17 +21,18 @@ publicadas pelo MCP, que aplica autorização e isolamento de tenant.
 
 ```mermaid
 flowchart TD
-    A[Cliente] --> B[POST /chat]
-    B --> C[Contexto usuario_id + empresa_id]
-    C --> D[Guardrail de entrada e anonimização]
-    D --> E[Carrega contexto de memória no ACTA AI]
-    E --> F[Roteador]
-    F --> G[Especialistas e tools MCP]
-    G --> H[Orquestrador]
-    H --> I[Guardrail de saída]
-    I --> J[Juiz: respostas de especialistas aprovadas pelo guardrail]
-    J --> K[Persiste mensagem e devolve resposta]
-    I -->|Bloqueio ou resposta geral| K
+    A[Cliente] -->|Firebase ID Token| B[POST /chat]
+    B --> C[Auth API: GET /api/v1/contexto]
+    C -->|IDs derivados do perfil ativo| D[Contexto usuario_id + empresa_id]
+    D --> E[Guardrail de entrada e anonimização]
+    E --> F[Carrega contexto de memória no ACTA AI]
+    F --> G[Roteador]
+    G --> H[Especialistas e tools MCP]
+    H --> I[Orquestrador]
+    I --> J[Guardrail de saída]
+    J --> K[Juiz: respostas de especialistas aprovadas pelo guardrail]
+    K --> L[Persiste mensagem e devolve resposta]
+    J -->|Bloqueio ou resposta geral| L
 ```
 
 O roteador seleciona os especialistas de acordo com a intenção. Especialistas usam
@@ -84,9 +85,12 @@ a rodada, aguardando nova mensagem do usuário.
 
 ## Identidade e isolamento
 
-Cada rota autenticada instala um `mcp_request_context` com `usuario_id`, `empresa_id`
-e um `trace_id`. O contexto filtra memória/skills no ACTA AI e vai em cabeçalhos nas
-chamadas MCP; a identidade não fica disponível como argumento do modelo.
+Cada rota protegida valida o Firebase ID Token chamando a Auth API e usa os IDs do
+perfil ativo retornado por `/api/v1/contexto`. `usuario_id` e `empresa_id` fornecidos
+em corpos ou queries não definem a identidade. O contexto verificado instala um
+`mcp_request_context`, filtra memória/skills no ACTA AI e vai em cabeçalhos nas
+chamadas MCP; a identidade não fica disponível como argumento do modelo. A rota
+`GET /health` é pública.
 
 O cache de tools dura somente uma execução da pipeline. O estado do LangGraph usa
 uma chave que inclui empresa, usuário e `session_id`, evitando misturar históricos

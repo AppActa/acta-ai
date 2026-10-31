@@ -5,9 +5,28 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+from clients.auth_api_client import AuthContext
 from clients.skill_client import SkillClientError
 
 client = TestClient(main.app)
+
+
+@pytest.fixture(autouse=True)
+def use_test_auth_context():
+    previous_override = main.app.dependency_overrides.get(main.require_auth_context)
+    main.app.dependency_overrides[main.require_auth_context] = lambda: AuthContext(
+        id_usuario=3,
+        id_empresa=4,
+        id_colaborador=5,
+        tipo="ADMIN",
+        permissao_gestor=True,
+    )
+    yield
+
+    if previous_override is None:
+        main.app.dependency_overrides.pop(main.require_auth_context, None)
+    else:
+        main.app.dependency_overrides[main.require_auth_context] = previous_override
 
 
 def test_health_endpoint() -> None:
@@ -98,7 +117,10 @@ def test_list_messages_endpoint_maps_session_errors(monkeypatch, error, expected
     assert response.status_code == expected_status
 
 
-def test_chat_requires_authenticated_identity() -> None:
+def test_chat_uses_authenticated_identity_instead_of_body_ids(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(main, "get_response", lambda **kwargs: calls.append(kwargs) or "ok")
+
     response = client.post(
         "/chat",
         json={
@@ -107,7 +129,8 @@ def test_chat_requires_authenticated_identity() -> None:
             "usuario_id": 1,
         },
     )
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert calls[0]["message"] == "Olá"
 
 
 def test_chat_normalizes_cycles_and_delegates_active_cycle(monkeypatch) -> None:
