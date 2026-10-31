@@ -57,9 +57,9 @@ mensagens. Portanto, uma conversa vazia não é criada, resumida nem listada.
 }
 ```
 
-`id_ciclo` aceita o formato legado de um inteiro ou uma lista opcional com até 20 IDs
-positivos. O inteiro legado é normalizado para lista. IDs duplicados são removidos
-mantendo a ordem da primeira ocorrência. `ciclo_ativo` também é opcional e, quando
+`id_ciclo` aceita o formato legado de um inteiro ou uma lista opcional de IDs positivos,
+sem limite fixo de quantidade. O inteiro legado é normalizado para lista, e IDs duplicados
+são removidos mantendo a ordem da primeira ocorrência. `ciclo_ativo` também é opcional e, quando
 informado, precisa constar na lista; ele é consultado primeiro. Quando não há ID de
 ciclo, o agente pode buscar ciclos acessíveis pelo título ou descrição. Se houver um
 único resultado compatível, usa esse ciclo nas consultas; se houver várias opções,
@@ -90,7 +90,7 @@ usuário e à empresa do token; uma sessão inexistente retorna 404.
 
 `POST /chat/audio` recebe `multipart/form-data` com `audio`,
 `session_id`, um `id_ciclo`
-legado ou até 20 campos `id_ciclo`, e
+legado ou uma lista de campos `id_ciclo` sem limite fixo, e
 `ciclo_ativo` opcional. O ciclo legado é normalizado para lista; IDs duplicados são
 removidos mantendo a ordem da primeira ocorrência. O ciclo ativo, se informado,
 precisa estar na lista e será priorizado. O arquivo não pode exceder 25 MB. A resposta

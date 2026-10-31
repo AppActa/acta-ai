@@ -194,7 +194,7 @@ def test_chat_accepts_legacy_single_cycle_id(monkeypatch) -> None:
     assert calls[0]["id_ciclo"] == [7]
 
 
-def test_chat_rejects_more_than_20_cycles(monkeypatch) -> None:
+def test_chat_accepts_more_than_20_cycles(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
     monkeypatch.setattr(main, "get_response", lambda **kwargs: calls.append(kwargs) or "ok")
@@ -203,14 +203,15 @@ def test_chat_rejects_more_than_20_cycles(monkeypatch) -> None:
         "/chat",
         json={
             "message": "Compare os ciclos",
-            "session_id": "sessao-limite",
-            "id_ciclo": list(range(1, 22)),
+            "session_id": "sessao-sem-limite",
+            "id_ciclo": list(range(1, 24)),
             "usuario_id": 3,
             "empresa_id": 4,
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert calls[0]["id_ciclo"] == list(range(1, 24))
 
 
 def test_chat_accepts_exactly_20_cycles(monkeypatch) -> None:

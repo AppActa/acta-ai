@@ -74,7 +74,7 @@ class NovaSessaoRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str = Field(..., min_length=1)
-    id_ciclo: list[int] = Field(default_factory=list, max_length=20)
+    id_ciclo: list[int] = Field(default_factory=list)
     ciclo_ativo: int | None = Field(default=None, gt=0)
 
     @field_validator("id_ciclo", mode="before")

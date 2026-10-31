@@ -322,9 +322,10 @@ def test_get_response_accepts_legacy_single_cycle_id(monkeypatch) -> None:
     )
 
 
-def test_get_response_rejects_more_than_20_cycles() -> None:
-    with pytest.raises(ValueError, match="20 ciclos"):
-        get_response("Compare os ciclos", f"teste::{uuid4()}", id_ciclo=list(range(1, 22)))
+def test_cycle_normalization_accepts_more_than_20_unique_ids() -> None:
+    cycle_ids = [*range(1, 24), 1]
+
+    assert pipeline_module._normalizar_ids_ciclo(cycle_ids) == list(range(1, 24))
 
 
 @pytest.mark.parametrize(
