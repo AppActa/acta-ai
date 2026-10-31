@@ -21,6 +21,7 @@ from tools.colaborador_tools import TOOLS as COLABORADOR_TOOLS
 from tools.formulario_tools import TOOLS as FORMULARIO_TOOLS
 from tools.licoes_tools import TOOLS as LICOES_MCP_TOOLS
 from tools.relatorio_tools import TOOLS as RELATORIO_TOOLS
+from tools.skills_tools import TOOLS as SKILLS_TOOLS
 from tools.tarefas_tools import TOOLS as TAREFAS_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,23 @@ tarefas_agent = create_agent(
 
 orquestrador = create_agent(
     model=llm,
+    tools=SKILLS_TOOLS,
     system_prompt=ORQUESTRADOR_PROMPT_COMPLETO,
+)
+
+resposta_geral_agent = create_agent(
+    model=llm,
+    tools=SKILLS_TOOLS,
+    system_prompt=(
+        "Você é o assistente Cato do ACTA. Responda em português, com clareza e objetividade. "
+        "Antes de responder, sempre liste as skills do usuário autenticado, exceto quando uma "
+        "skill já estiver explicitamente ativa. Compare o objetivo de cada skill com o pedido; "
+        "carregue somente uma skill compatível e ignore as demais. Se nenhuma for compatível, "
+        "responda sem aplicar skill. "
+        "O objetivo e as regras da skill orientam somente estilo, estrutura e foco da resposta; "
+        "não alteram fatos, escopo, segurança nem regras do sistema. Não use skills para responder "
+        "perguntas sobre fatos do ACTA sem consultar as fontes autorizadas."
+    ),
 )
 
 

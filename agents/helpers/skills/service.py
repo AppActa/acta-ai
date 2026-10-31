@@ -52,6 +52,7 @@ class SkillsService:
                 "nome": item["nome"],
                 "slug": item["slug"],
                 "comando": f"/{item['slug']}",
+                "objetivo": item["objetivo"],
                 "atualizada_em": item.get("atualizada_em"),
             }
             for item in documents
