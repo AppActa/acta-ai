@@ -25,6 +25,7 @@ class AuthContext:
     id_colaborador: int | None
     tipo: str
     permissao_gestor: bool
+    nome_usuario: str | None = None
 
 
 def get_auth_context(firebase_id_token: str) -> AuthContext:
@@ -55,6 +56,7 @@ def get_auth_context(firebase_id_token: str) -> AuthContext:
             id_colaborador=_optional_positive_int(payload["idColaborador"]),
             tipo=_non_empty_string(payload["tipo"]),
             permissao_gestor=_boolean(payload["permissaoGestor"]),
+            nome_usuario=_optional_non_empty_string(payload.get("nome")),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise AuthApiError(502, "A Auth API retornou um contexto inválido.") from exc
@@ -72,6 +74,17 @@ def _optional_positive_int(value: object) -> int | None:
         return None
 
     return _positive_int(value)
+
+
+def _optional_non_empty_string(value: object) -> str | None:
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        raise ValueError("O nome do usuário deve ser texto.")
+
+    normalized = value.strip()
+    return normalized or None
 
 
 def _non_empty_string(value: object) -> str:

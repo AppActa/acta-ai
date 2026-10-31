@@ -27,6 +27,7 @@ def test_auth_api_client_sends_bearer_token_and_parses_context(monkeypatch) -> N
                     "idColaborador": 31,
                     "tipo": "ADMIN",
                     "permissaoGestor": True,
+                    "nome": "Gabriel Pibbles",
                 }
             ).encode()
 
@@ -49,6 +50,7 @@ def test_auth_api_client_sends_bearer_token_and_parses_context(monkeypatch) -> N
         id_colaborador=31,
         tipo="ADMIN",
         permissao_gestor=True,
+        nome_usuario="Gabriel Pibbles",
     )
 
 
@@ -64,6 +66,30 @@ def test_auth_api_client_maps_auth_api_401(monkeypatch) -> None:
         get_auth_context("expired-token")
 
     assert error.value.status_code == 401
+
+
+def test_auth_api_client_accepts_context_without_name(monkeypatch) -> None:
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "idUsuario": 17,
+                    "idEmpresa": 23,
+                    "idColaborador": None,
+                    "tipo": "ADMIN",
+                    "permissaoGestor": True,
+                }
+            ).encode()
+
+    monkeypatch.setattr("clients.auth_api_client.urlopen", lambda *_args, **_kwargs: Response())
+
+    assert get_auth_context("firebase-id-token").nome_usuario is None
 
 
 def test_protected_route_requires_bearer_token() -> None:
@@ -119,3 +145,34 @@ def test_auth_api_unavailable_fails_closed(monkeypatch) -> None:
     )
 
     assert response.status_code == 503
+
+
+def test_chat_passes_verified_name_to_pipeline(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        main,
+        "get_auth_context",
+        lambda _token: AuthContext(
+            id_usuario=17,
+            id_empresa=23,
+            id_colaborador=31,
+            tipo="ADMIN",
+            permissao_gestor=True,
+            nome_usuario="Gabriel Vigna",
+        ),
+    )
+    monkeypatch.setattr(main, "mcp_request_context", lambda **_kwargs: nullcontext())
+    monkeypatch.setattr(
+        main,
+        "get_response",
+        lambda **kwargs: calls.append(kwargs) or "ok",
+    )
+
+    response = TestClient(main.app).post(
+        "/chat",
+        headers={"Authorization": "Bearer valid-token"},
+        json={"message": "Como me chamo?", "session_id": "sessao-nome"},
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["nome_usuario"] == "Gabriel Vigna"

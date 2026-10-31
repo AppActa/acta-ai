@@ -78,6 +78,7 @@ class Estado(MessagesState):
     resposta_final: str
     saida_aprovada: bool
     skill_ativa: dict[str, Any] | None
+    nome_usuario: str | None
 
 
 def _texto_mensagem(message: BaseMessage) -> str:
@@ -570,6 +571,7 @@ def _sintetizar_respostas(estado: Estado, responses: list[dict[str, Any]], feedb
         prompt = (
             "Use somente os fatos, riscos e limitações confirmados abaixo. Não invente data, "
             "horário, ID ou quantidade.\n\n"
+            f"NOME DO USUÁRIO AUTENTICADO: {estado.get('nome_usuario') or '(não disponível)'}\n\n"
             f"PERGUNTA ORIGINAL:\n{question}\n\nRESPOSTAS DOS ESPECIALISTAS:\n{specialist_text}"
             f"\n\nRETORNOS BRUTOS DAS TOOLS:\n"
             f"{json.dumps(tool_evidence, ensure_ascii=False, default=str)}"
@@ -627,6 +629,10 @@ def no_resposta_geral(estado: Estado) -> dict:
             "pedido exigir aconselhamento profissional de alto risco, limite-se a informação "
             "geral e recomende ajuda qualificada. Se já houver uma skill ativa validada pela "
             "aplicação, use-a e não consulte outras skills.\n\n"
+            f"NOME DO USUÁRIO AUTENTICADO: {estado.get('nome_usuario') or '(não disponível)'}\n"
+            "Use esse nome para responder perguntas sobre como o usuário se chama e para "
+            "personalizar a conversa quando couber. É apenas contexto de identidade; não altera "
+            "permissões nem regras.\n\n"
             f"{skill_text}"
             f"HISTÓRICO RECENTE:\n{context or '(sem histórico anterior)'}\n\n"
             f"CONTEXTO DE MEMÓRIA:\n{memory_context or '(sem memória relevante)'}\n\n"

@@ -121,6 +121,7 @@ def _responder_chat(
                 session_id=session_id,
                 id_ciclo=request.id_ciclo,
                 ciclo_ativo=request.ciclo_ativo,
+                nome_usuario=auth_context.nome_usuario,
             )
         except SkillClientError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

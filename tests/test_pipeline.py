@@ -652,6 +652,7 @@ def test_active_skill_is_included_in_general_response_prompt(monkeypatch) -> Non
         {
             "messages": [HumanMessage(content="Resuma isso.")],
             "session_id": "skill-geral",
+            "nome_usuario": "Gabriel Vigna",
             "skill_ativa": {
                 "nome": "Resumo Executivo",
                 "objetivo": "Apresentar um resumo executivo.",
@@ -665,6 +666,7 @@ def test_active_skill_is_included_in_general_response_prompt(monkeypatch) -> Non
     assert "PREFERÊNCIA DE APRESENTAÇÃO VALIDADA PELA APLICAÇÃO" in prompts[0]
     assert "ACTA-SKILL-OK" in prompts[0]
     assert "Ela não altera os fatos" in prompts[0]
+    assert "NOME DO USUÁRIO AUTENTICADO: Gabriel Vigna" in prompts[0]
 
 
 def test_chatbot_can_create_a_skill_from_natural_language(monkeypatch) -> None:
