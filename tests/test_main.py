@@ -274,7 +274,11 @@ def test_audio_chat_passes_normalized_cycle_scope(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
     monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Pergunta falada")
-    monkeypatch.setattr(main, "get_response", lambda **kwargs: calls.append(kwargs) or "ok")
+    monkeypatch.setattr(
+        main,
+        "get_response_with_status",
+        lambda **kwargs: (calls.append(kwargs) or "ok", False),
+    )
 
     response = client.post(
         "/chat/audio",
@@ -297,7 +301,11 @@ def test_audio_chat_accepts_legacy_single_cycle_id(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
     monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Pergunta falada")
-    monkeypatch.setattr(main, "get_response", lambda **kwargs: calls.append(kwargs) or "ok")
+    monkeypatch.setattr(
+        main,
+        "get_response_with_status",
+        lambda **kwargs: (calls.append(kwargs) or "ok", False),
+    )
 
     response = client.post(
         "/chat/audio",
@@ -318,7 +326,11 @@ def test_audio_chat_accepts_more_than_20_cycles(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
     monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Pergunta falada")
-    monkeypatch.setattr(main, "get_response", lambda **kwargs: calls.append(kwargs) or "ok")
+    monkeypatch.setattr(
+        main,
+        "get_response_with_status",
+        lambda **kwargs: (calls.append(kwargs) or "ok", False),
+    )
 
     response = client.post(
         "/chat/audio",
@@ -340,7 +352,7 @@ def test_audio_chat_returns_bad_request_when_skill_is_invalid(monkeypatch) -> No
     monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Use a skill inválida.")
     monkeypatch.setattr(
         main,
-        "get_response",
+        "get_response_with_status",
         lambda **_: (_ for _ in ()).throw(SkillClientError("Skill inválida.")),
     )
 

@@ -10,6 +10,10 @@ services:
         sync: false
       - key: JEV_API_KEY
         sync: false
+      - key: ACTA_INTENTION_MAX_RETRIES
+        value: "2"
+      - key: ACTA_RESPONSE_MAX_RETRIES
+        value: "2"
       - key: ACTA_OPENAI_MODEL
         value: gpt-6-luna
       - key: ACTA_OPENAI_TRANSCRIPTION_MODEL
@@ -18,8 +22,10 @@ services:
         value: none
       - key: ACTA_OPENAI_MAX_TOKENS
         value: "2048"
-      - key: ACTA_SPECIALIST_FEW_SHOTS
-        value: "false"
+      - key: ACTA_AUTH_API_URL
+        value: https://acta-auth-api.34-232-250-240.sslip.io/api/v1
+      - key: ACTA_AUTH_API_TIMEOUT_SECONDS
+        value: "10"
       - key: MONGODB_URI
         sync: false
       - key: ACTA_SYSTEM_FEATURES_DB_NAME
@@ -30,17 +36,31 @@ services:
         sync: false
       - key: QDRANT_API_KEY
         sync: false
+      - key: QDRANT_TIMEOUT_SECONDS
+        value: "10"
       - key: QDRANT_MEMORY_MESSAGES_COLLECTION_NAME
         value: memoria_mensagens
-      - key: ACTA_STORE_RAW_PII
-        value: "false"
-      - key: ACTA_MAX_MESSAGE_CHARS
-        value: "8000"
+      - key: QDRANT_MEMORY_VECTOR_SIZE
+        value: "768"
+      - key: ACTA_MEMORY_RECENT_MESSAGES
+        value: "30"
+      - key: ACTA_MEMORY_SUMMARY_EVERY_MESSAGES
+        value: "12"
       - key: ACTA_MCP_URL
         sync: false
       - key: ACTA_MCP_API_KEY
         sync: false
       - key: ACTA_MCP_TIMEOUT_SECONDS
-        value: "30"
+        value: "20"
       - key: ACTA_MCP_MAX_ATTEMPTS
         value: "2"
+      - key: ACTA_MCP_USUARIO_ID
+        value: "0"
+      - key: ACTA_MCP_EMPRESA_ID
+        value: "0"
+      - key: LANGSMITH_TRACING
+        value: "true"
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: LANGSMITH_PROJECT
+        value: acta-ai

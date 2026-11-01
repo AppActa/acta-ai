@@ -79,6 +79,7 @@ class Estado(MessagesState):
     saida_aprovada: bool
     skill_ativa: dict[str, Any] | None
     nome_usuario: str | None
+    entrada_bloqueada: bool
 
 
 def _texto_mensagem(message: BaseMessage) -> str:
@@ -428,7 +429,7 @@ def no_guardrail_entrada(estado: Estado) -> dict:
         _salvar_mensagem(
             session_id=session_id,
             role="human",
-            content="[MENSAGEM BLOQUEADA PELO GUARDRAIL]",
+            content="MENSAGEM BLOQUEADA PELO GUARDRAIL",
             agent="guardrail_entrada",
         )
         _salvar_mensagem(
@@ -439,6 +440,7 @@ def no_guardrail_entrada(estado: Estado) -> dict:
         )
         return {
             "rota": "fim",
+            "entrada_bloqueada": True,
             "mapa_pii": pii_map,
             "contexto_memoria": memory_context,
             "resposta_final": blocked_message,
