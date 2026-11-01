@@ -127,11 +127,23 @@ def executar_fluxo_acta(
     ciclo_ativo: int | None = None,
     nome_usuario: str | None = None,
 ) -> str:
+    return _executar_fluxo_acta_com_status(
+        pergunta_usuario, session_id, id_ciclo, ciclo_ativo, nome_usuario
+    )[0]
+
+
+def _executar_fluxo_acta_com_status(
+    pergunta_usuario: str,
+    session_id: str,
+    id_ciclo: int | list[int] | None = None,
+    ciclo_ativo: int | None = None,
+    nome_usuario: str | None = None,
+) -> tuple[str, bool]:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
     raw_question = pergunta_usuario.strip()
     if eh_pedido_criacao_skill(raw_question):
-        return _criar_skill_pelo_chatbot(raw_question)
+        return _criar_skill_pelo_chatbot(raw_question), False
 
     question, active_skill = resolver_comando_skill(raw_question)
     session_key = session_id.strip()
@@ -176,13 +188,13 @@ def executar_fluxo_acta(
 
     answer = _texto_resposta(final_state.get("resposta_final", ""))
     if answer:
-        return answer
+        return answer, bool(final_state.get("entrada_bloqueada"))
 
     messages = final_state.get("messages", [])
     if messages:
         content = messages[-1].content
-        return _texto_resposta(content)
-    return "Não foi possível gerar uma resposta."
+        return _texto_resposta(content), bool(final_state.get("entrada_bloqueada"))
+    return "Não foi possível gerar uma resposta.", bool(final_state.get("entrada_bloqueada"))
 
 
 def get_response(
@@ -200,4 +212,17 @@ def get_response(
         id_ciclo=id_ciclo,
         ciclo_ativo=ciclo_ativo,
         nome_usuario=nome_usuario,
+    )
+
+
+def get_response_with_status(
+    message: str,
+    session_id: str,
+    id_ciclo: int | list[int] | None = None,
+    ciclo_ativo: int | None = None,
+    nome_usuario: str | None = None,
+) -> tuple[str, bool]:
+    """Retorna a resposta e informa se a entrada foi bloqueada."""
+    return _executar_fluxo_acta_com_status(
+        message, session_id, id_ciclo, ciclo_ativo, nome_usuario
     )

@@ -24,7 +24,7 @@ from clients.skill_client import (
     excluir_skill,
     listar_skills,
 )
-from pipeline import get_response
+from pipeline import get_response, get_response_with_status
 
 app = FastAPI(
     title="ACTA AI API",
@@ -110,13 +110,15 @@ def _responder_chat(
     *,
     message: str,
     session_id: str,
-) -> str:
+    incluir_status: bool = False,
+) -> str | tuple[str, bool]:
     with mcp_request_context(
         usuario_id=auth_context.id_usuario,
         empresa_id=auth_context.id_empresa,
     ):
         try:
-            return get_response(
+            responder = get_response_with_status if incluir_status else get_response
+            return responder(
                 message=message,
                 session_id=session_id,
                 id_ciclo=request.id_ciclo,
@@ -247,11 +249,16 @@ async def chat_audio(
         auth_context,
         message=transcricao,
         session_id=session_id,
+        incluir_status=True,
     )
+
+    resposta, entrada_bloqueada = resposta
 
     return {
         "session_id": session_id,
-        "transcricao": transcricao,
+        "transcricao": (
+            "MENSAGEM BLOQUEADA PELO GUARDRAIL" if entrada_bloqueada else transcricao
+        ),
         "resposta": resposta,
     }
 
