@@ -62,6 +62,10 @@ FERRAMENTAS_LEITURA_ENTRE_CICLOS = frozenset({
     "licoes_resumir_entre_ciclos",
     "licoes_perguntar_entre_ciclos",
 })
+FERRAMENTAS_FORA_ESCOPO_CICLO = frozenset({
+    "faq_retriever",
+    "ciclos_buscar_por_descricao",
+}) | FERRAMENTAS_LEITURA_ENTRE_CICLOS
 
 
 @contextmanager
@@ -342,12 +346,8 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     busca_ciclos = tool_name == "ciclos_buscar_por_descricao"
     if (
         ciclos_autorizados is not None
-        and tool_name not in {
-            "faq_retriever",
-            "ciclos_buscar_por_descricao",
-            *FERRAMENTAS_LEITURA_ENTRE_CICLOS,
-        }
-        and argumentos_validos.get("id_ciclo") not in (ciclos_autorizados | ciclos_descobertos)
+        and tool_name not in FERRAMENTAS_FORA_ESCOPO_CICLO
+        and argumentos_validos.get("id_ciclo") not in ciclos_autorizados | ciclos_descobertos
     ):
         resultado = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
         _registrar_evidencia_tool(tool_name, argumentos_validos, resultado, cached=False)
@@ -369,21 +369,23 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
 
     # Escritas nunca usam cache: cada aprovação corresponde a uma chamada real.
     cache = _request_cache.get() if eh_leitura else None
-    chave_cache = json.dumps(
-        [tool_name, argumentos_validos],
-        sort_keys=True,
-        ensure_ascii=False,
-        default=str,
-    )
-    if cache is not None and chave_cache in cache:
-        logger.debug("Cache MCP da requisição: hit em %s", tool_name)
-        resultado_cache = cache[chave_cache]
-        if busca_ciclos:
-            _registrar_ciclos_descobertos(resultado_cache)
-        _registrar_evidencia_tool(
-            tool_name, argumentos_validos, resultado_cache, cached=True
+    chave_cache = None
+    if cache is not None:
+        chave_cache = json.dumps(
+            [tool_name, argumentos_validos],
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
         )
-        return resultado_cache
+        if chave_cache in cache:
+            logger.debug("Cache MCP da requisição: hit em %s", tool_name)
+            resultado_cache = cache[chave_cache]
+            if busca_ciclos:
+                _registrar_ciclos_descobertos(resultado_cache)
+            _registrar_evidencia_tool(
+                tool_name, argumentos_validos, resultado_cache, cached=True
+            )
+            return resultado_cache
 
     try:
         resultado = _run_async_in_sync_context(tool_name, argumentos_validos)
@@ -401,7 +403,7 @@ def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
                 "Não consegui confirmar o resultado da alteração. A operação não foi repetida automaticamente."
             ) from erro
         raise
-    if cache is not None:
+    if cache is not None and chave_cache is not None:
         cache[chave_cache] = resultado
     if busca_ciclos:
         _registrar_ciclos_descobertos(resultado)
