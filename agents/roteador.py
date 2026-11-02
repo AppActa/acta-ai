@@ -67,8 +67,8 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
     """Seleciona a rota, os especialistas e o escopo de ciclos com JEV."""
 
     try:
-        with TypeSafeClient(api_key=JEV_API_KEY) as client:
-            routing = client.system_one(
+        with TypeSafeClient(api_key=JEV_API_KEY) as cliente:
+            roteamento = cliente.system_one(
                 state={
                     "mensagem_usuario": pergunta,
                     "contexto_conversa": contexto_conversa,
@@ -113,28 +113,28 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                         },
                     ),
                     **{
-                        name: Noul(
+                        nome: Noul(
                             instructions=(
                                 "A mensagem atual, considerando o contexto recente, deve ser "
                                 "encaminhada a este especialista? Só marque quando houver relação "
                                 "direta com o ACTA e com este domínio. Nunca encaminhe pedidos "
                                 "fora do ACTA, como código ou receita. Considere o contexto para "
-                                f"mensagens curtas de continuação. Domínio e exemplos: {description}"
+                                f"mensagens curtas de continuação. Domínio e exemplos: {descricao}"
                             ),
                         )
-                        for name, description in DESCRICOES_ESPECIALISTAS.items()
+                        for nome, descricao in DESCRICOES_ESPECIALISTAS.items()
                     },
                 },
             )
-            message_type = routing.choices["tipo_mensagem"].choice
-            if message_type == "conversa":
+            tipo_mensagem = roteamento.choices["tipo_mensagem"].choice
+            if tipo_mensagem == "conversa":
                 return {
                     "rota": "resposta_geral",
                 }
-            if message_type == "fora_escopo":
+            if tipo_mensagem == "fora_escopo":
                 logger.info("Mensagem classificada fora do escopo do ACTA")
                 return {"rota": "fora_escopo"}
-            if message_type != "negocio":
+            if tipo_mensagem != "negocio":
                 return {"rota": "falha_classificacao"}
 
     except Exception:  # noqa: BLE001 - o guardrail já aprovou a entrada
@@ -142,27 +142,27 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
         return {"rota": "falha_classificacao"}
 
     # Os Noul retornam probabilidades; 0.5 separa especialistas relevantes dos demais.
-    selected = [
-        name
-        for name in DESCRICOES_ESPECIALISTAS
-        if routing.nouls[name].noul >= 0.5
+    selecionados = [
+        nome
+        for nome in DESCRICOES_ESPECIALISTAS
+        if roteamento.nouls[nome].noul >= 0.5
     ]
-    scores = {
-        name: float(routing.nouls[name].noul)
-        for name in DESCRICOES_ESPECIALISTAS
+    notas = {
+        nome: float(roteamento.nouls[nome].noul)
+        for nome in DESCRICOES_ESPECIALISTAS
     }
     logger.warning(
         "Roteamento JEV: tipo=%s escopo=%s notas={%s} selecionados=%s",
-        message_type,
-        routing.choices["escopo_ciclos"].choice,
-        ", ".join(f"{name}={score:.2f}" for name, score in scores.items()),
-        selected,
+        tipo_mensagem,
+        roteamento.choices["escopo_ciclos"].choice,
+        ", ".join(f"{nome}={nota:.2f}" for nome, nota in notas.items()),
+        selecionados,
     )
-    if not selected:
+    if not selecionados:
         return {"rota": "escopo_nao_identificado"}
 
     return {
         "rota": "especialistas",
-        "especialistas": selected,
-        "escopo_ciclos": routing.choices["escopo_ciclos"].choice,
+        "especialistas": selecionados,
+        "escopo_ciclos": roteamento.choices["escopo_ciclos"].choice,
     }

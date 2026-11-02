@@ -10,7 +10,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.helpers.errors import AuthorizationError, NotFoundError
-from config import ACTA_CORS_ORIGINS
 from agents.memoria import consolidar_memoria
 from clients.auth_api_client import AuthApiError, AuthContext, get_auth_context
 from clients.client_transcricao import transcrever_audio
@@ -26,6 +25,7 @@ from clients.skill_client import (
     excluir_skill,
     listar_skills,
 )
+from config import ACTA_CORS_ORIGINS
 from pipeline import get_response, get_response_with_status
 
 app = FastAPI(

@@ -26,10 +26,10 @@ from tools.tarefas_tools import TOOLS as TAREFAS_TOOLS
 
 logger = logging.getLogger(__name__)
 
-def _tools_com_busca_de_ciclo(tools):
-    if ciclos_buscar_por_descricao in tools:
-        return tools
-    return [*tools, ciclos_buscar_por_descricao]
+def _tools_com_busca_de_ciclo(ferramentas):
+    if ciclos_buscar_por_descricao in ferramentas:
+        return ferramentas
+    return [*ferramentas, ciclos_buscar_por_descricao]
 
 ESPECIALISTAS_VALIDOS = (
     "rag",
@@ -121,20 +121,20 @@ def responder_faq(pergunta: str, *, feedback: str = "") -> str:
         return "Não recebi uma pergunta válida para responder."
 
     try:
-        result = call_acta_tool("faq_retriever", {"question": pergunta, "limit": 3})
-        if not isinstance(result, dict) or result.get("status") != "ok":
+        resultado = call_acta_tool("faq_retriever", {"question": pergunta, "limit": 3})
+        if not isinstance(resultado, dict) or resultado.get("status") != "ok":
             return "Não consegui consultar a base de conhecimento do ACTA no momento."
         contexto = "\n\n---\n\n".join(
             "\n".join(
-                part
-                for part in (
-                    f"Fonte: {item.get('source', '')}",
-                    f"Título: {item.get('title', '')}",
-                    item.get("content", ""),
+                parte
+                for parte in (
+                    f"Fonte: {fonte.get('source', '')}",
+                    f"Título: {fonte.get('title', '')}",
+                    fonte.get("content", ""),
                 )
-                if part
+                if parte
             )
-            for item in result.get("resultados", [])
+            for fonte in resultado.get("resultados", [])
         )
         if not contexto or not contexto.strip():
             return "Não encontrei informação suficiente na base do ACTA para responder essa pergunta."
