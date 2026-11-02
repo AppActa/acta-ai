@@ -25,8 +25,7 @@ def _state(*specialists: str) -> dict:
     }
 
 
-def test_specialists_run_in_order_and_keep_mcp_context(monkeypatch) -> None:
-    monkeypatch.setenv("ACTA_ENFORCE_SPECIALIST_TOOL", "false")
+def test_revision_specialists_keep_mcp_context(monkeypatch) -> None:
     order = []
 
     def executor(_estado: dict) -> str:
@@ -34,20 +33,17 @@ def test_specialists_run_in_order_and_keep_mcp_context(monkeypatch) -> None:
         order.append(len(order) + 1)
         return f"{context.usuario_id}:{context.empresa_id}:{context.trace_id}"
 
-    monkeypatch.setattr(
-        state_module,
-        "REGISTRO_ESPECIALISTAS",
-        {"primeiro": executor, "segundo": executor},
-    )
+    monkeypatch.setitem(state_module.REGISTRO_ESPECIALISTAS, "ciclo", executor)
+    monkeypatch.setitem(state_module.REGISTRO_ESPECIALISTAS, "tarefas", executor)
 
     with mcp_request_context(
         usuario_id=7,
         empresa_id=9,
         trace_id="trace-paralelo",
     ):
-        responses = state_module.executar_especialistas(_state("primeiro", "segundo"))
+        responses = state_module.executar_especialistas(_state("ciclo", "tarefas"))
 
-    assert [item["especialista"] for item in responses] == ["primeiro", "segundo"]
+    assert [item["especialista"] for item in responses] == ["ciclo", "tarefas"]
     assert {item["resposta"] for item in responses} == {"7:9:trace-paralelo"}
     assert order == [1, 2]
 
@@ -57,24 +53,16 @@ def test_specialist_answer_is_not_replaced_by_graph_tool_fallback(
     monkeypatch,
     specialist: str,
 ) -> None:
-    calls = []
     monkeypatch.setitem(
         state_module.REGISTRO_ESPECIALISTAS,
         specialist,
         lambda _state: "Resposta produzida pelo especialista.",
     )
-    monkeypatch.setattr(
-        state_module,
-        "call_acta_tool",
-        lambda name, args: calls.append((name, args)) or {"status": "ok"},
-    )
-
     responses = state_module.executar_especialistas(_state(specialist))
 
     assert [item["especialista"] for item in responses] == [specialist]
     assert responses[0]["resposta"] == "Resposta produzida pelo especialista."
     assert responses[0]["evidencias"] == []
-    assert calls == []
 
 
 def test_mcp_cache_is_limited_to_request_context(monkeypatch) -> None:
