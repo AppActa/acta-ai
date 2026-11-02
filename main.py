@@ -5,14 +5,16 @@ from typing import Annotated
 
 import uvicorn
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.helpers.errors import AuthorizationError, NotFoundError
+from config import ACTA_CORS_ORIGINS
 from agents.memoria import consolidar_memoria
 from clients.auth_api_client import AuthApiError, AuthContext, get_auth_context
 from clients.client_transcricao import transcrever_audio
-from clients.mcp_acta_client import mcp_request_context
+from clients.mcp_acta_client import call_acta_tool, mcp_request_context
 from clients.memory_client import (
     encerrar_sessao,
     listar_chats,
@@ -30,6 +32,13 @@ app = FastAPI(
     title="ACTA AI API",
     description="API do chatbot gerencial do ACTA",
     version="1.1.1",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(ACTA_CORS_ORIGINS),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -166,6 +175,30 @@ def consultar_chats(auth_context: CurrentAuthContext, limit: int = 50) -> dict:
         empresa_id=auth_context.id_empresa,
     ):
         return {"chats": listar_chats(limit=limit)}
+
+
+@app.get("/ciclos")
+def consultar_ciclos(auth_context: CurrentAuthContext) -> dict:
+    """Lista somente os ciclos associados à identidade autenticada."""
+
+    with mcp_request_context(
+        usuario_id=auth_context.id_usuario,
+        empresa_id=auth_context.id_empresa,
+    ):
+        try:
+            resultado = call_acta_tool("ciclos_listar", {})
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Não foi possível carregar os ciclos do usuário.",
+            ) from exc
+
+    if not isinstance(resultado, dict) or resultado.get("status") != "ok":
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível carregar os ciclos do usuário.",
+        )
+    return {"ciclos": resultado.get("ciclos", [])}
 
 
 @app.get("/chats/{session_id}/mensagens")

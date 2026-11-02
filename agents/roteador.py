@@ -18,8 +18,15 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
     ),
     "ciclo": (
         "Consultar dados reais de um ciclo específico do ACTA: fase, status, riscos ou "
-        "andamento; também registrar causas raiz, adicionar itens ao Ishikawa ou criar "
-        "treinamentos quando solicitado. Não deve ser escolhido para explicar o método "
+        "andamento e treinamentos previstos, relacionados ou registrados no ciclo; também "
+        "identificar e resumir o ciclo do usuário quando perguntar 'qual é o meu ciclo?', "
+        "'como está meu ciclo?' ou 'qual ciclo está ativo para mim?'. Essas perguntas "
+        "são consultas de negócio do ACTA, nunca pedidos fora de escopo; use o ciclo "
+        "ativo da requisição e, se não houver, descubra os ciclos autorizados e peça "
+        "escolha quando houver mais de um. "
+        "registrar causas raiz, adicionar itens ao Ishikawa ou criar treinamentos quando "
+        "solicitado. Perguntas como 'Quais treinamentos estão previstos?' consultam os "
+        "treinamentos do ciclo, mesmo sem citar ACTA explicitamente. Não deve ser escolhido para explicar o método "
         "PDCA, suas etapas ou conceitos gerais. Exemplos: 'Como está o ciclo 12?', "
         "'Qual a fase atual do ciclo 12?'"
     ),
@@ -85,7 +92,12 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                             "fora_escopo": (
                                 "Qualquer pedido concreto não relacionado ao ACTA, seus recursos "
                                 "ou PDCA, incluindo código, receitas, recomendações e conteúdo "
-                                "geral. Use esta categoria para impedir que o pedido seja respondido."
+                                "geral. Perguntas sobre treinamentos previstos ou registrados em "
+                                "um ciclo e perguntas pessoais como 'qual é o meu ciclo?' ou "
+                                "'como está meu ciclo?' são relacionadas ao ACTA, mesmo sem "
+                                "mencionar o sistema; encaminhe-as como negócio para consultar "
+                                "o ciclo autorizado do usuário. "
+                                "Use esta categoria para impedir que pedidos alheios ao ACTA sejam respondidos."
                             ),
                         },
                     ),
