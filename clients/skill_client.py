@@ -19,19 +19,19 @@ class SkillClientError(ValueError):
 def eh_pedido_criacao_skill(message: str) -> bool:
     """Reconhece pedidos naturais de criação sem confundir com `/skill` em uso."""
 
-    stripped = message.strip()
-    if stripped.startswith("/"):
+    mensagem_limpa = message.strip()
+    if mensagem_limpa.startswith("/"):
         return False
-    normalized = "".join(
-        character
-        for character in unicodedata.normalize("NFKD", stripped.casefold())
-        if not unicodedata.combining(character)
+    texto_normalizado = "".join(
+        caractere
+        for caractere in unicodedata.normalize("NFKD", mensagem_limpa.casefold())
+        if not unicodedata.combining(caractere)
     )
-    patterns = (
+    padroes = (
         r"\b(?:crie|cria|criar|monte|monta|faca|fazer)\b.{0,30}\bskill\b",
         r"\b(?:quero|gostaria|pode)\b.{0,20}\bcriar\b.{0,20}\bskill\b",
     )
-    return any(re.search(pattern, normalized) for pattern in patterns)
+    return any(re.search(padrao, texto_normalizado) for padrao in padroes)
 
 
 def criar_skill(conteudo_markdown: str) -> dict[str, Any]:
@@ -64,18 +64,18 @@ def excluir_skill(nome: str) -> dict[str, Any]:
 def resolver_comando_skill(message: str) -> tuple[str, dict[str, Any] | None]:
     """Remove `/nome-da-skill` antes do roteador e carrega a skill autenticada."""
 
-    stripped = message.strip()
-    if not stripped.startswith("/"):
-        return stripped, None
+    mensagem_limpa = message.strip()
+    if not mensagem_limpa.startswith("/"):
+        return mensagem_limpa, None
 
-    match = _SKILL_COMMAND.fullmatch(stripped)
-    if match is None:
+    correspondencia = _SKILL_COMMAND.fullmatch(mensagem_limpa)
+    if correspondencia is None:
         raise SkillClientError(
             "Use a skill como /nome-da-skill seguida da pergunta que deseja fazer."
         )
-    question = (match.group("message") or "").strip()
-    if not question:
+    pergunta = (correspondencia.group("message") or "").strip()
+    if not pergunta:
         raise SkillClientError("Escreva uma pergunta depois do comando da skill.")
 
-    skill = obter_skill(match.group("slug"))
-    return question, skill
+    skill = obter_skill(correspondencia.group("slug"))
+    return pergunta, skill

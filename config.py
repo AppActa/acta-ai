@@ -43,6 +43,14 @@ ACTA_AUTH_API_URL = os.getenv(
     "https://acta-auth-api.34-232-250-240.sslip.io/api/v1",
 ).rstrip("/")
 ACTA_AUTH_API_TIMEOUT_SECONDS = float(os.getenv("ACTA_AUTH_API_TIMEOUT_SECONDS", "10"))
+ACTA_CORS_ORIGINS = tuple(
+    origin.strip()
+    for origin in os.getenv(
+        "ACTA_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+)
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27018")
 MONGODB_SESSIONS_COLLECTION = "memoria_sessoes"

@@ -29,6 +29,20 @@ def correction(action, **extra):
     return {"status": "CORRIGIR", "acao": action, "feedback": "A contagem correta precisa ser confirmada.", "especialista": None, "pergunta": None, **extra}
 
 
+class FakeToolAgent:
+    def __init__(self, tool, arguments: list[dict], answer: str) -> None:
+        self.tool = tool
+        self.arguments = arguments
+        self.answer = answer
+        self.calls = []
+
+    def invoke(self, payload: dict) -> dict:
+        self.calls.append(payload)
+        for arguments in self.arguments:
+            self.tool.invoke(arguments)
+        return {"messages": [*payload["messages"], AIMessage(content=self.answer)]}
+
+
 @pytest.fixture
 def persistence(monkeypatch):
     save = Mock()
@@ -245,16 +259,27 @@ def test_revision_read_only_context_is_cleared_after_exception():
 
 
 def test_lesson_revision_keeps_comparison_scope_and_feedback(monkeypatch):
+    from tools import licoes_tools
+
     calls = []
-    monkeypatch.setattr(state, "_executar_agente", lambda *_: pytest.fail("Revisão de lições mantém consultas explícitas por ciclo"))
-    monkeypatch.setattr(state, "call_acta_tool", lambda name, args: calls.append((name, args)) or {"status": "ok", "resposta": "Dados confirmados"})
+    monkeypatch.setattr(
+        licoes_tools,
+        "call_acta_tool",
+        lambda name, args: calls.append((name, args)) or {"status": "ok", "resposta": "Dados confirmados"},
+    )
+    agent = FakeToolAgent(
+        licoes_tools.consultar_licoes_aprendidas,
+        [{"id_ciclo": ciclo_id, "pergunta": "Compare as lições."} for ciclo_id in (1, 3)],
+        "Dados confirmados",
+    )
+    monkeypatch.setattr(state, "licoes_agent", agent)
     state._executar_licoes({
         "messages": [HumanMessage(content="Compare as lições dos ciclos")],
         "id_ciclo": [1, 3], "escopo_ciclos": "comparacao", "feedback_juiz": "Explique as diferenças.",
     })
     assert [args["id_ciclo"] for _, args in calls] == [1, 3]
     assert all(name == "licoes_perguntar" for name, _ in calls)
-    assert all("Explique as diferenças" in args["pergunta"] for _, args in calls)
+    assert "Explique as diferenças" in agent.calls[0]["messages"][0].content
 
 
 @pytest.mark.parametrize(
@@ -280,12 +305,27 @@ def test_lesson_revision_keeps_comparison_scope_and_feedback(monkeypatch):
 def test_lesson_request_between_all_cycles_uses_cross_cycle_tool(
     monkeypatch, question, expected_tool, expected_arguments
 ):
+    from tools import licoes_tools
+
     calls = []
     monkeypatch.setattr(
-        state,
+        licoes_tools,
         "call_acta_tool",
-        lambda name, args: calls.append((name, args))
-        or {"status": "sem_licoes"},
+        lambda name, args: calls.append((name, args)) or {"status": "sem_licoes"},
+    )
+    ferramentas = {
+        "licoes_listar_entre_ciclos": licoes_tools.listar_licoes_entre_ciclos,
+        "licoes_resumir_entre_ciclos": licoes_tools.resumir_licoes_entre_ciclos,
+        "licoes_perguntar_entre_ciclos": licoes_tools.consultar_licoes_entre_ciclos,
+    }
+    monkeypatch.setattr(
+        state,
+        "licoes_agent",
+        FakeToolAgent(
+            ferramentas[expected_tool],
+            [expected_arguments],
+            "Não há lições registradas.",
+        ),
     )
 
     result = state._executar_licoes({

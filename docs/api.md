@@ -16,6 +16,14 @@ internos; para isso, consulte `GET /health` no MCP.
 As demais rotas exigem um Firebase ID Token válido e um perfil ACTA ativo. Se a Auth
 API estiver indisponível, a requisição falha sem executar a operação.
 
+## Ciclos
+
+### Listar ciclos disponíveis
+
+`GET /ciclos`
+
+Lista os ciclos aos quais o usuário autenticado tem acesso.
+
 ## Conversas
 
 ### Criar conversa

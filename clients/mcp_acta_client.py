@@ -55,7 +55,7 @@ _discovered_cycle_scope: ContextVar[set[int] | None] = ContextVar(
     "acta_ai_discovered_cycle_scope",
     default=None,
 )
-CROSS_CYCLE_READ_TOOLS = frozenset({
+FERRAMENTAS_LEITURA_ENTRE_CICLOS = frozenset({
     "tarefas_resumo_entre_ciclos",
     "tarefas_consultar_entre_ciclos",
     "licoes_listar_entre_ciclos",
@@ -68,67 +68,67 @@ CROSS_CYCLE_READ_TOOLS = frozenset({
 def mcp_cycle_scope_context(cycle_ids: list[int]) -> Iterator[None]:
     """Limita as chamadas MCP desta rodada aos ciclos recebidos pelo chatbot."""
 
-    token = _cycle_scope.set(frozenset(cycle_ids))
-    discovered_token = _discovered_cycle_scope.set(set())
+    token_ciclos = _cycle_scope.set(frozenset(cycle_ids))
+    token_ciclos_descobertos = _discovered_cycle_scope.set(set())
     try:
         yield
     finally:
-        _discovered_cycle_scope.reset(discovered_token)
-        _cycle_scope.reset(token)
+        _discovered_cycle_scope.reset(token_ciclos_descobertos)
+        _cycle_scope.reset(token_ciclos)
 
 
 @contextmanager
 def mcp_discovered_cycle_scope_context() -> Iterator[None]:
     """Inicializa o escopo descoberto caso a chamada não esteja dentro de uma requisição."""
 
-    token = None
+    token_escopo = None
     if _discovered_cycle_scope.get() is None:
-        token = _discovered_cycle_scope.set(set())
+        token_escopo = _discovered_cycle_scope.set(set())
     try:
         yield
     finally:
-        if token is not None:
-            _discovered_cycle_scope.reset(token)
+        if token_escopo is not None:
+            _discovered_cycle_scope.reset(token_escopo)
 
 
 @contextmanager
 def mcp_tool_cache_context() -> Iterator[dict[str, dict | str]]:
     """Mantém resultados MCP somente durante uma execução da pipeline."""
 
-    cache: dict[str, dict | str] = {}
-    token = _request_cache.set(cache)
+    cache_ferramentas: dict[str, dict | str] = {}
+    token_cache = _request_cache.set(cache_ferramentas)
     try:
-        yield cache
+        yield cache_ferramentas
     finally:
-        _request_cache.reset(token)
+        _request_cache.reset(token_cache)
 
 
 @contextmanager
 def mcp_tool_evidence_context() -> Iterator[list[dict[str, object]]]:
     """Coleta, isoladamente, as chamadas MCP reais feitas por um especialista."""
 
-    evidence: list[dict[str, object]] = []
-    token = _tool_evidence.set(evidence)
+    evidencias: list[dict[str, object]] = []
+    token_evidencias = _tool_evidence.set(evidencias)
     try:
-        yield evidence
+        yield evidencias
     finally:
-        _tool_evidence.reset(token)
+        _tool_evidence.reset(token_evidencias)
 
 
-def _record_tool_evidence(
-    tool_name: str,
-    arguments: dict,
-    result: dict | str,
+def _registrar_evidencia_tool(
+    nome_ferramenta: str,
+    argumentos: dict,
+    resultado: dict | str,
     *,
     cached: bool,
 ) -> None:
-    evidence = _tool_evidence.get()
-    if evidence is not None:
-        evidence.append(
+    evidencias = _tool_evidence.get()
+    if evidencias is not None:
+        evidencias.append(
             {
-                "tool": tool_name,
-                "argumentos": arguments,
-                "resultado": result,
+                "tool": nome_ferramenta,
+                "argumentos": argumentos,
+                "resultado": resultado,
                 "cache": cached,
             }
         )
@@ -142,22 +142,22 @@ def mcp_request_context(
     trace_id: str | None = None,
 ) -> Iterator[MCPRequestContext]:
     """Define o contexto autenticado propagado às chamadas MCP deste fluxo."""
-    context = MCPRequestContext(
+    contexto = MCPRequestContext(
         usuario_id=usuario_id,
         empresa_id=empresa_id,
         trace_id=trace_id or str(uuid4()),
     )
-    token = _request_context.set(context)
+    token_contexto = _request_context.set(contexto)
     try:
-        yield context
+        yield contexto
     finally:
-        _request_context.reset(token)
+        _request_context.reset(token_contexto)
 
 
 def _current_context() -> MCPRequestContext:
-    context = _request_context.get()
-    if context is not None:
-        return context
+    contexto = _request_context.get()
+    if contexto is not None:
+        return contexto
 
     return MCPRequestContext(
         usuario_id=ACTA_MCP_USUARIO_ID,
@@ -169,48 +169,48 @@ def _current_context() -> MCPRequestContext:
 def current_mcp_request_context() -> MCPRequestContext:
     """Retorna a identidade autenticada ativa, sem fallback de ambiente."""
 
-    context = _request_context.get()
-    if context is None:
+    contexto = _request_context.get()
+    if contexto is None:
         raise MCPActaError("Não há contexto autenticado ativo para a requisição.")
-    return context
+    return contexto
 
 
 def mcp_identity_scope() -> str:
     """Escopo estável para caches locais, sem expor a identidade ao modelo."""
 
-    context = _request_context.get()
-    if context is None:
+    contexto = _request_context.get()
+    if contexto is None:
         return "local"
-    return f"empresa:{context.empresa_id}:usuario:{context.usuario_id}"
+    return f"empresa:{contexto.empresa_id}:usuario:{contexto.usuario_id}"
 
 
 def _headers() -> dict[str, str]:
-    context = _current_context()
-    headers = {
-        "X-Acta-Usuario-Id": str(context.usuario_id),
-        "X-Acta-Empresa-Id": str(context.empresa_id),
-        "X-Trace-Id": context.trace_id,
+    contexto = _current_context()
+    cabecalhos = {
+        "X-Acta-Usuario-Id": str(contexto.usuario_id),
+        "X-Acta-Empresa-Id": str(contexto.empresa_id),
+        "X-Trace-Id": contexto.trace_id,
     }
-    api_key = os.getenv("ACTA_MCP_API_KEY", ACTA_MCP_API_KEY)
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    return headers
+    chave_api = os.getenv("ACTA_MCP_API_KEY", ACTA_MCP_API_KEY)
+    if chave_api:
+        cabecalhos["Authorization"] = f"Bearer {chave_api}"
+    return cabecalhos
 
 
-def _is_transient_error(exc: BaseException) -> bool:
+def _is_transient_error(erro: BaseException) -> bool:
     """Reconhece apenas falhas temporárias que podem melhorar numa nova tentativa."""
 
-    if isinstance(exc, BaseExceptionGroup):
-        return any(_is_transient_error(nested) for nested in exc.exceptions)
-    if isinstance(exc, (TimeoutError, ConnectionError)):
+    if isinstance(erro, BaseExceptionGroup):
+        return any(_is_transient_error(erro_interno) for erro_interno in erro.exceptions)
+    if isinstance(erro, (TimeoutError, ConnectionError)):
         return True
-    status_code = getattr(getattr(exc, "response", None), "status_code", None)
-    if status_code in {408, 429, 500, 502, 503, 504}:
+    codigo_status = getattr(getattr(erro, "response", None), "status_code", None)
+    if codigo_status in {408, 429, 500, 502, 503, 504}:
         return True
-    message = str(exc).lower()
+    mensagem_erro = str(erro).lower()
     return any(
-        marker in message
-        for marker in (
+        marcador in mensagem_erro
+        for marcador in (
             "timed out",
             "timeout",
             "connection reset",
@@ -225,164 +225,185 @@ def _is_transient_error(exc: BaseException) -> bool:
     )
 
 
-async def _call_tool_once(tool_name: str, arguments: dict) -> dict | str:
-    url = os.getenv("ACTA_MCP_URL", ACTA_MCP_URL)
-    timeout = float(os.getenv("ACTA_MCP_TIMEOUT_SECONDS", str(ACTA_MCP_TIMEOUT_SECONDS)))
+async def _call_tool_once(nome_ferramenta: str, argumentos: dict) -> dict | str:
+    endereco = os.getenv("ACTA_MCP_URL", ACTA_MCP_URL)
+    limite_tempo = float(
+        os.getenv("ACTA_MCP_TIMEOUT_SECONDS", str(ACTA_MCP_TIMEOUT_SECONDS))
+    )
 
     async with streamablehttp_client(
-        url,
+        endereco,
         headers=_headers(),
-        timeout=timeout,
-        sse_read_timeout=timeout,
-    ) as streams:
-        read_stream, write_stream, _ = streams
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            response = await session.call_tool(tool_name, arguments)
+        timeout=limite_tempo,
+        sse_read_timeout=limite_tempo,
+    ) as fluxos:
+        fluxo_leitura, fluxo_escrita, _ = fluxos
+        async with ClientSession(fluxo_leitura, fluxo_escrita) as sessao:
+            await sessao.initialize()
+            resposta = await sessao.call_tool(nome_ferramenta, argumentos)
 
-    if response.isError:
-        messages = [getattr(content, "text", str(content)) for content in response.content]
-        raise MCPActaError(f"A tool MCP '{tool_name}' retornou erro: {' '.join(messages)}")
+    if resposta.isError:
+        mensagens = [
+            getattr(conteudo, "text", str(conteudo)) for conteudo in resposta.content
+        ]
+        raise MCPActaError(
+            f"A tool MCP '{nome_ferramenta}' retornou erro: {' '.join(mensagens)}"
+        )
 
-    if response.structuredContent is not None:
-        return response.structuredContent
+    if resposta.structuredContent is not None:
+        return resposta.structuredContent
 
-    text_parts = [content.text for content in response.content if hasattr(content, "text")]
-    raw = "\n".join(text_parts)
+    partes_texto = [
+        conteudo.text for conteudo in resposta.content if hasattr(conteudo, "text")
+    ]
+    texto_bruto = "\n".join(partes_texto)
     try:
-        return json.loads(raw)
+        return json.loads(texto_bruto)
     except json.JSONDecodeError:
-        return raw
+        return texto_bruto
 
 
-async def _call_tool_async(tool_name: str, arguments: dict) -> dict | str:
+async def _call_tool_async(nome_ferramenta: str, argumentos: dict) -> dict | str:
     from agents.execucao import TOOLS_LEITURA
 
-    max_attempts = max(1, int(os.getenv("ACTA_MCP_MAX_ATTEMPTS", str(ACTA_MCP_MAX_ATTEMPTS))))
-    if tool_name not in TOOLS_LEITURA:
-        max_attempts = 1
-    for attempt in range(1, max_attempts + 1):
+    max_tentativas = max(
+        1,
+        int(os.getenv("ACTA_MCP_MAX_ATTEMPTS", str(ACTA_MCP_MAX_ATTEMPTS))),
+    )
+    if nome_ferramenta not in TOOLS_LEITURA:
+        max_tentativas = 1
+    for tentativa in range(1, max_tentativas + 1):
         try:
-            return await _call_tool_once(tool_name, arguments)
-        except Exception as exc:
-            if attempt == max_attempts or not _is_transient_error(exc):
-                raise MCPActaError(f"Falha ao chamar a tool MCP '{tool_name}': {exc}") from exc
+            return await _call_tool_once(nome_ferramenta, argumentos)
+        except Exception as erro:
+            if tentativa == max_tentativas or not _is_transient_error(erro):
+                raise MCPActaError(
+                    f"Falha ao chamar a tool MCP '{nome_ferramenta}': {erro}"
+                ) from erro
             logger.warning(
                 "Falha MCP transitória em %s (tentativa %s/%s): %s",
-                tool_name,
-                attempt,
-                max_attempts,
-                exc,
+                nome_ferramenta,
+                tentativa,
+                max_tentativas,
+                erro,
             )
-            await asyncio.sleep(0.2 * attempt)
+            await asyncio.sleep(0.2 * tentativa)
 
 
-def _run_async_in_sync_context(tool_name: str, arguments: dict) -> dict | str:
+def _run_async_in_sync_context(nome_ferramenta: str, argumentos: dict) -> dict | str:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(_call_tool_async(tool_name, arguments))
+        return asyncio.run(_call_tool_async(nome_ferramenta, argumentos))
 
-    result: list[dict | str] = []
-    error: list[Exception] = []
+    resultado: list[dict | str] = []
+    erro: list[Exception] = []
 
-    def runner() -> None:
+    def executar() -> None:
         try:
-            result.append(asyncio.run(_call_tool_async(tool_name, arguments)))
-        except Exception as exc:  # noqa: BLE001 - propagado para a thread chamadora
-            error.append(exc)
+            resultado.append(asyncio.run(_call_tool_async(nome_ferramenta, argumentos)))
+        except Exception as erro_execucao:  # noqa: BLE001 - propagado à thread chamadora
+            erro.append(erro_execucao)
 
-    thread = threading.Thread(target=copy_context().run, args=(runner,), daemon=True)
-    thread.start()
-    thread.join()
-    if error:
-        raise error[0]
-    return result[0]
+    fio = threading.Thread(target=copy_context().run, args=(executar,), daemon=True)
+    fio.start()
+    fio.join()
+    if erro:
+        raise erro[0]
+    return resultado[0]
 
 
-def _registrar_ciclos_descobertos(result: dict | str) -> None:
-    if not isinstance(result, dict) or result.get("status") != "ok":
+def _registrar_ciclos_descobertos(resultado: dict | str) -> None:
+    if not isinstance(resultado, dict) or resultado.get("status") != "ok":
         return
-    discovered_ids = {
+    ids_descobertos = {
         ciclo.get("id_ciclo")
-        for ciclo in result.get("ciclos", [])
+        for ciclo in resultado.get("ciclos", [])
         if isinstance(ciclo, dict)
         and isinstance(ciclo.get("id_ciclo"), int)
         and ciclo["id_ciclo"] > 0
     }
-    active_scope = _discovered_cycle_scope.get()
-    if active_scope is None:
-        _discovered_cycle_scope.set(discovered_ids)
+    escopo_descoberto = _discovered_cycle_scope.get()
+    if escopo_descoberto is None:
+        _discovered_cycle_scope.set(ids_descobertos)
     else:
-        active_scope.update(discovered_ids)
+        escopo_descoberto.update(ids_descobertos)
 
 
 def call_acta_tool(tool_name: str, arguments: dict) -> dict | str:
     """Executa uma tool no MCP ACTA preservando resultado estruturado."""
-    sanitized = {
-        key: value for key, value in arguments.items() if value is not None and key != "id_empresa"
+    argumentos_validos = {
+        chave: valor
+        for chave, valor in arguments.items()
+        if valor is not None and chave != "id_empresa"
     }
-    allowed_cycles = _cycle_scope.get()
-    discovered_cycles = _discovered_cycle_scope.get() or set()
-    is_cycle_discovery = tool_name == "ciclos_buscar_por_descricao"
+    ciclos_autorizados = _cycle_scope.get()
+    ciclos_descobertos = _discovered_cycle_scope.get() or set()
+    busca_ciclos = tool_name == "ciclos_buscar_por_descricao"
     if (
-        allowed_cycles is not None
-        and tool_name not in {"faq_retriever", "ciclos_buscar_por_descricao", *CROSS_CYCLE_READ_TOOLS}
-        and sanitized.get("id_ciclo") not in (allowed_cycles | discovered_cycles)
+        ciclos_autorizados is not None
+        and tool_name not in {
+            "faq_retriever",
+            "ciclos_buscar_por_descricao",
+            *FERRAMENTAS_LEITURA_ENTRE_CICLOS,
+        }
+        and argumentos_validos.get("id_ciclo") not in (ciclos_autorizados | ciclos_descobertos)
     ):
-        result = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
-        _record_tool_evidence(tool_name, sanitized, result, cached=False)
-        return result
+        resultado = {"status": "forbidden", "erro": "Ciclo fora do escopo desta requisição."}
+        _registrar_evidencia_tool(tool_name, argumentos_validos, resultado, cached=False)
+        return resultado
     from agents.execucao import TOOLS_LEITURA, avaliar_transacao
 
-    is_read = tool_name in TOOLS_LEITURA
-    if not is_read:
+    eh_leitura = tool_name in TOOLS_LEITURA
+    if not eh_leitura:
         # O wrapper já resolveu defaults/contexto. O juiz recebe o payload efetivo.
-        intention, evaluation = avaliar_transacao(tool_name, sanitized)
-        if evaluation.decisao == "corrigir_proposta":
+        intencao, avaliacao = avaliar_transacao(tool_name, argumentos_validos)
+        if avaliacao.decisao == "corrigir_proposta":
             return {
                 "status": "corrigir_proposta",
-                "motivo": evaluation.motivo,
-                "intencao": intention.model_dump(),
+                "motivo": avaliacao.motivo,
+                "intencao": intencao.model_dump(),
                 "instrucao": "Corrija a proposta com os dados disponíveis e proponha novamente. Nada foi executado.",
             }
-        sanitized = intention.argumentos
+        argumentos_validos = intencao.argumentos
 
     # Escritas nunca usam cache: cada aprovação corresponde a uma chamada real.
-    cache = _request_cache.get() if is_read else None
-    cache_key = json.dumps(
-        [tool_name, sanitized],
+    cache = _request_cache.get() if eh_leitura else None
+    chave_cache = json.dumps(
+        [tool_name, argumentos_validos],
         sort_keys=True,
         ensure_ascii=False,
         default=str,
     )
-    if cache is not None and cache_key in cache:
+    if cache is not None and chave_cache in cache:
         logger.debug("Cache MCP da requisição: hit em %s", tool_name)
-        cached_result = cache[cache_key]
-        if is_cycle_discovery:
-            _registrar_ciclos_descobertos(cached_result)
-        _record_tool_evidence(tool_name, sanitized, cached_result, cached=True)
-        return cached_result
+        resultado_cache = cache[chave_cache]
+        if busca_ciclos:
+            _registrar_ciclos_descobertos(resultado_cache)
+        _registrar_evidencia_tool(
+            tool_name, argumentos_validos, resultado_cache, cached=True
+        )
+        return resultado_cache
 
     try:
-        result = _run_async_in_sync_context(tool_name, sanitized)
-    except Exception as exc:
-        _record_tool_evidence(
+        resultado = _run_async_in_sync_context(tool_name, argumentos_validos)
+    except Exception as erro:
+        _registrar_evidencia_tool(
             tool_name,
-            sanitized,
-            {"status": "error", "tipo": type(exc).__name__},
+            argumentos_validos,
+            {"status": "error", "tipo": type(erro).__name__},
             cached=False,
         )
-        if not is_read:
+        if not eh_leitura:
             from agents.intencao import ExecucaoBloqueada
 
             raise ExecucaoBloqueada(
                 "Não consegui confirmar o resultado da alteração. A operação não foi repetida automaticamente."
-            ) from exc
+            ) from erro
         raise
     if cache is not None:
-        cache[cache_key] = result
-    if is_cycle_discovery:
-        _registrar_ciclos_descobertos(result)
-    _record_tool_evidence(tool_name, sanitized, result, cached=False)
-    return result
+        cache[chave_cache] = resultado
+    if busca_ciclos:
+        _registrar_ciclos_descobertos(resultado)
+    _registrar_evidencia_tool(tool_name, argumentos_validos, resultado, cached=False)
+    return resultado

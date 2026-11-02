@@ -26,6 +26,8 @@ services:
         value: https://acta-auth-api.34-232-250-240.sslip.io/api/v1
       - key: ACTA_AUTH_API_TIMEOUT_SECONDS
         value: "10"
+      - key: ACTA_CORS_ORIGINS
+        sync: false
       - key: MONGODB_URI
         sync: false
       - key: ACTA_SYSTEM_FEATURES_DB_NAME
