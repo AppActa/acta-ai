@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 import main
 from clients.auth_api_client import AuthContext
-from clients.skill_client import SkillClientError
 
 client = TestClient(main.app)
 
@@ -347,72 +346,12 @@ def test_audio_chat_accepts_more_than_20_cycles(monkeypatch) -> None:
     assert calls[0]["id_ciclo"] == list(range(1, 24))
 
 
-def test_audio_chat_returns_bad_request_when_skill_is_invalid(monkeypatch) -> None:
-    monkeypatch.setattr(main, "mcp_request_context", lambda **_: nullcontext())
-    monkeypatch.setattr(main, "transcrever_audio", lambda *_args, **_kwargs: "Use a skill inválida.")
-    monkeypatch.setattr(
-        main,
-        "get_response_with_status",
-        lambda **_: (_ for _ in ()).throw(SkillClientError("Skill inválida.")),
-    )
-
-    response = client.post(
-        "/chat/audio",
-        data={"session_id": "sessao-audio", "usuario_id": "3", "empresa_id": "4"},
-        files={"audio": ("audio.webm", b"audio", "audio/webm")},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Skill inválida."
-
-
 def test_old_separate_memory_routes_are_removed() -> None:
     assert client.get("/memoria?usuario_id=3&empresa_id=4").status_code == 404
     assert client.get("/memoria/consentimento?usuario_id=3&empresa_id=4").status_code == 404
 
 
-def test_skill_creation_list_and_deletion_endpoints(monkeypatch) -> None:
-    contexts = []
-
-    def fake_context(**kwargs):
-        contexts.append(kwargs)
-        return nullcontext()
-
-    monkeypatch.setattr(main, "mcp_request_context", fake_context)
-    monkeypatch.setattr(
-        main,
-        "criar_skill",
-        lambda markdown: {"nome": "Resumo Executivo", "comando": "/resumo-executivo"},
-    )
-    monkeypatch.setattr(
-        main,
-        "listar_skills",
-        lambda limit=50: [{"nome": "Resumo Executivo", "comando": "/resumo-executivo"}],
-    )
-    monkeypatch.setattr(
-        main,
-        "excluir_skill",
-        lambda nome: {"status": "ok", "comando": f"/{nome}", "excluida": True},
-    )
-
-    markdown = "# Resumo Executivo\n# objetivo\nResumir resultados.\n# regras\nUsar tópicos."
-    created = client.post(
-        "/skills",
-        json={
-            "usuario_id": 3,
-            "empresa_id": 4,
-            "conteudo_markdown": markdown,
-        },
-    )
-    listed = client.get("/skills?usuario_id=3&empresa_id=4")
-    deleted = client.delete("/skills/resumo-executivo?usuario_id=3&empresa_id=4")
-
-    assert created.status_code == 200
-    assert created.json()["skill"]["comando"] == "/resumo-executivo"
-    assert listed.json()["skills"][0]["nome"] == "Resumo Executivo"
-    assert deleted.json()["excluida"] is True
-    assert contexts == [
-        {"usuario_id": 3, "empresa_id": 4},
-        {"usuario_id": 3, "empresa_id": 4},
-        {"usuario_id": 3, "empresa_id": 4},
-    ]
+def test_skill_routes_are_removed() -> None:
+    assert client.get("/skills").status_code == 404
+    assert client.post("/skills", json={}).status_code == 404
+    assert client.delete("/skills/exemplo").status_code == 404

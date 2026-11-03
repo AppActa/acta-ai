@@ -19,12 +19,6 @@ from clients.memory_client import (
     listar_chats,
     listar_mensagens,
 )
-from clients.skill_client import (
-    SkillClientError,
-    criar_skill,
-    excluir_skill,
-    listar_skills,
-)
 from config import ACTA_CORS_ORIGINS
 from pipeline import get_response, get_response_with_status
 
@@ -109,10 +103,6 @@ class ChatRequest(BaseModel):
         return self
 
 
-class CriarSkillRequest(BaseModel):
-    conteudo_markdown: str = Field(..., min_length=1, max_length=5000)
-
-
 def _responder_chat(
     request: ChatRequest,
     auth_context: AuthContext,
@@ -125,17 +115,14 @@ def _responder_chat(
         usuario_id=auth_context.id_usuario,
         empresa_id=auth_context.id_empresa,
     ):
-        try:
-            responder = get_response_with_status if incluir_status else get_response
-            return responder(
-                message=message,
-                session_id=session_id,
-                id_ciclo=request.id_ciclo,
-                ciclo_ativo=request.ciclo_ativo,
-                nome_usuario=auth_context.nome_usuario,
-            )
-        except SkillClientError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        responder = get_response_with_status if incluir_status else get_response
+        return responder(
+            message=message,
+            session_id=session_id,
+            id_ciclo=request.id_ciclo,
+            ciclo_ativo=request.ciclo_ativo,
+            nome_usuario=auth_context.nome_usuario,
+        )
 
 
 @app.get("/health")
@@ -294,47 +281,6 @@ async def chat_audio(
         ),
         "resposta": resposta,
     }
-
-
-@app.post("/skills")
-def criar_skill_personalizada(
-    request: CriarSkillRequest,
-    auth_context: CurrentAuthContext,
-) -> dict:
-    """Cria ou atualiza uma skill no formato Markdown seguro."""
-
-    with mcp_request_context(
-        usuario_id=auth_context.id_usuario,
-        empresa_id=auth_context.id_empresa,
-    ):
-        try:
-            return {"skill": criar_skill(request.conteudo_markdown)}
-        except SkillClientError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.get("/skills")
-def consultar_skills(auth_context: CurrentAuthContext, limit: int = 50) -> dict:
-    with mcp_request_context(
-        usuario_id=auth_context.id_usuario,
-        empresa_id=auth_context.id_empresa,
-    ):
-        return {"skills": listar_skills(limit=limit)}
-
-
-@app.delete("/skills/{nome}")
-def apagar_skill(
-    nome: str,
-    auth_context: CurrentAuthContext,
-) -> dict:
-    with mcp_request_context(
-        usuario_id=auth_context.id_usuario,
-        empresa_id=auth_context.id_empresa,
-    ):
-        try:
-            return excluir_skill(nome)
-        except SkillClientError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":

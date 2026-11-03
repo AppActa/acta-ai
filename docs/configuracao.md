@@ -26,7 +26,7 @@
 | `ACTA_INTENTION_MAX_RETRIES` | Correções da proposta de escrita; padrão `2` (inicial + duas correções). Inteiro >= 0. |
 | `ACTA_RESPONSE_MAX_RETRIES` | Correções da resposta final; padrão `2` (avaliação inicial + até duas correções). Revisões permitem somente consultas. Inteiro >= 0. |
 | `ACTA_MCP_USUARIO_ID` e `ACTA_MCP_EMPRESA_ID` | Identidade padrão apenas para uso fora das rotas HTTP; padrão `0`. |
-| `MONGODB_URI` e `ACTA_SYSTEM_FEATURES_DB_NAME` | MongoDB das conversas, memórias e skills pessoais; banco padrão `acta`. |
+| `MONGODB_URI` e `ACTA_SYSTEM_FEATURES_DB_NAME` | MongoDB das conversas e memórias; banco padrão `acta`. |
 | `ACTA_MEMORY_RECENT_MESSAGES` | Mensagens recentes incluídas no contexto; padrão `30`. |
 | `ACTA_MEMORY_SUMMARY_EVERY_MESSAGES` | Limiar para resumir a conversa; padrão `12`. |
 | `GEMINI_API_KEY` | Embeddings de memória e geração das lições aprendidas. |

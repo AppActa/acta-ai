@@ -17,15 +17,7 @@ from agents.estado import (
     no_resposta_geral,
     no_roteador,
 )
-from agents.guardrail import anonimizar_entrada, guardrail_entrada
-from agents.skill_builder import gerar_markdown_skill
 from clients.mcp_acta_client import mcp_identity_scope, mcp_tool_cache_context
-from clients.skill_client import (
-    SkillClientError,
-    criar_skill,
-    eh_pedido_criacao_skill,
-    resolver_comando_skill,
-)
 
 
 def _texto_resposta(conteudo: object) -> str:
@@ -53,24 +45,6 @@ def _normalizar_ids_ciclo(id_ciclo: int | list[int] | None) -> list[int]:
     if any(not isinstance(ciclo_id, int) or ciclo_id <= 0 for ciclo_id in ids_ciclo):
         raise ValueError("id_ciclo deve conter somente inteiros positivos.")
     return list(dict.fromkeys(ids_ciclo))
-
-
-def _criar_skill_pelo_chatbot(pedido: str) -> str:
-    """Gera o contrato mínimo e só persiste depois da validação final no MCP."""
-
-    pedido_anonimizado, mapa_pii = anonimizar_entrada(pedido)
-    if mapa_pii:
-        raise SkillClientError("Não inclua dados pessoais na definição de uma skill.")
-    resultado_guardrail = guardrail_entrada(pedido_anonimizado)
-    if not resultado_guardrail["valido"]:
-        return resultado_guardrail["mensagem"]
-
-    markdown = gerar_markdown_skill(pedido_anonimizado)
-    skill = criar_skill(markdown)
-    return (
-        f"Skill criada: {skill['comando']}\n\n"
-        f"Use assim: `{skill['comando']} sua pergunta`"
-    )
 
 
 def construir_fluxo():
@@ -141,11 +115,7 @@ def _executar_fluxo_acta_com_status(
 ) -> tuple[str, bool]:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
-    pergunta_original = pergunta_usuario.strip()
-    if eh_pedido_criacao_skill(pergunta_original):
-        return _criar_skill_pelo_chatbot(pergunta_original), False
-
-    pergunta, skill_ativa = resolver_comando_skill(pergunta_original)
+    pergunta = pergunta_usuario.strip()
     sessao = session_id.strip()
     if not pergunta:
         raise ValueError("pergunta_usuario é obrigatória.")
@@ -170,7 +140,6 @@ def _executar_fluxo_acta_com_status(
         "ciclo_ativo": ciclo_ativo,
         "contexto_memoria": "",
         "resposta_final": "",
-        "skill_ativa": skill_ativa,
         "nome_usuario": nome_usuario,
     }
     with mcp_tool_cache_context():

@@ -109,13 +109,3 @@ inclui a transcrição e a resposta do chat.
 As sessões e mensagens ficam em `memoria_sessoes` e `memoria_mensagens` no MongoDB.
 O contexto automático inclui até 30 mensagens recentes. O histórico não tem expiração
 automática; veja [Histórico de conversas](memoria.md).
-
-## Skills personalizadas
-
-- `POST /skills` recebe `conteudo_markdown`.
-- `GET /skills?limit=50` lista as skills privadas.
-- `DELETE /skills/{nome}` remove uma skill.
-
-Uma skill é um contrato Markdown restrito com `# nome`, `# objetivo` e `# regras`.
-Ela orienta a apresentação da resposta e não concede acesso adicional a dados ou
-tools.

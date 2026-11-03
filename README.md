@@ -1,10 +1,10 @@
 # 🤖 ACTA AI
 
-Assistente gerencial do ACTA para apoiar o ciclo **PDCA** (*Plan, Do, Check, Act*), consultar dados autorizados dos ciclos e manter conversas, memórias e skills pessoais.
+Assistente gerencial do ACTA para apoiar o ciclo **PDCA** (*Plan, Do, Check, Act*), consultar dados autorizados dos ciclos e manter conversas e memórias.
 
 ## 📌 Visão geral
 
-O `acta-ai` recebe mensagens por uma API HTTP, executa um fluxo de agentes com LangGraph e consulta operações de domínio pelo [servidor ACTA MCP](https://github.com/AppActa/acta-mcp). Ele também mantém histórico de conversas, memórias e skills pessoais no MongoDB; o Qdrant pode indexar esses dados para busca semântica.
+O `acta-ai` recebe mensagens por uma API HTTP, executa um fluxo de agentes com LangGraph e consulta operações de domínio pelo [servidor ACTA MCP](https://github.com/AppActa/acta-mcp). Ele também mantém histórico de conversas e memórias no MongoDB; o Qdrant pode indexar esses dados para busca semântica.
 
 O roteador direciona cada solicitação a especialistas de ciclos, tarefas, colaboradores, formulários, indicadores, relatórios, lições aprendidas ou FAQ. Antes de qualquer escrita de domínio, o juiz avalia a intenção (ferramenta e argumentos): só executa com decisão aprovada e apoio >= 0.7. Pode pedir até duas correções ou solicitar esclarecimento sem executar. Consultas continuam no fluxo atual. Um orquestrador consolida os resultados; após o guardrail de saída, o juiz final verifica a resposta contra as evidências. Se houver inconsistência, pode solicitar até duas correções ao especialista responsável ou ao orquestrador, ou pedir esclarecimento ao usuário. A revisão da resposta permite somente consultas para evitar repetir gravações.
 
@@ -17,7 +17,6 @@ O roteador direciona cada solicitação a especialistas de ciclos, tarefas, cola
 | Ciclos | Encontrar ciclos pela descrição e consultar um ou vários ciclos, mantendo chamadas MCP dentro do escopo informado. |
 | Áudio | Transcrever arquivos de até 25 MB e encaminhar o texto ao fluxo de chat. |
 | Conversas | Persistir sessões e mensagens no MongoDB, carregar até 30 mensagens recentes e indexar mensagens no Qdrant. |
-| Skills pessoais | Criar skills em Markdown pelo chat ou pela API, listar e excluir skills e invocá-las com comandos como `/nome-da-skill sua pergunta`. |
 | Proteção da interação | Reconhecer padrões de prompt injection e dados pessoais; avaliar fidelidade, segurança e relevância da resposta antes de devolvê-la. |
 
 ## 🏗️ Arquitetura e segurança
@@ -55,7 +54,7 @@ As rotas HTTP protegidas exigem um Firebase ID Token no cabeçalho `Authorizatio
 | LangGraph 1.2.11 | Fluxo de roteamento, especialistas, orquestração e juiz. |
 | OpenAI 2.54.0 | Modelos de chat e transcrição de áudio. |
 | MCP SDK 1.28.1 | Cliente do servidor de ferramentas ACTA MCP. |
-| MongoDB / PyMongo 4.17.0 | Conversas, mensagens, memórias e skills pessoais. |
+| MongoDB / PyMongo 4.17.0 | Conversas, mensagens e memórias. |
 | Qdrant | Índice semântico opcional para mensagens e memórias. |
 | Gemini | Embeddings usados na busca semântica de memória. |
 | JEV | Classificação de segurança e avaliação da resposta final. |
@@ -121,7 +120,6 @@ As rotas principais são:
 | `POST /chat` | Processa uma mensagem e retorna a resposta para o `session_id`. |
 | `POST /chat/audio` | Transcreve áudio e encaminha o texto ao fluxo de chat. |
 | `GET /listar_chats`, `GET /chats/{session_id}/mensagens` | Lista conversas e mensagens pertencentes ao usuário e à empresa informados. |
-| `/skills` | Cria, lista e exclui skills pessoais. |
 
 A API completa, parâmetros e exemplos de requisição estão em [Referência da API HTTP](docs/api.md). A persistência e o contexto de conversas estão em [Histórico de conversas](docs/memoria.md).
 
@@ -143,7 +141,7 @@ O [`render.yaml`](render.yaml) descreve um serviço web Docker no Render. O arqu
 .
 ├── .github/workflows/  # validação contínua
 ├── agents/             # roteador, especialistas, guardrails e juiz
-├── clients/            # clientes MCP, memória, skills e transcrição
+├── clients/            # clientes MCP, memória e transcrição
 ├── db_scripts/         # conexão, índices e inicialização MongoDB
 ├── docs/               # arquitetura, API, configuração e memória
 ├── tools/              # operações de domínio expostas aos agentes

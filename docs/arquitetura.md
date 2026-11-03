@@ -2,8 +2,8 @@
 
 ## Responsabilidades
 
-O ACTA AI é a camada conversacional e mantém suas capacidades internas: memória e
-skills pessoais. Para dados, FAQ e operações dos domínios ACTA, chama tools
+O ACTA AI é a camada conversacional e mantém memória. Para dados, FAQ e operações
+dos domínios ACTA, chama tools
 publicadas pelo MCP, que aplica autorização e isolamento de tenant.
 
 | Componente | Responsabilidade |
@@ -14,7 +14,6 @@ publicadas pelo MCP, que aplica autorização e isolamento de tenant.
 | `agents/guardrail.py` | Anonimização de PII e bloqueios de segurança. |
 | `clients/mcp_acta_client.py` | Cliente Streamable HTTP para operações de domínio. |
 | `clients/memory_client.py` | Operações de memória no MongoDB/Qdrant do ACTA AI. |
-| `clients/skill_client.py` | Skills pessoais no MongoDB do ACTA AI. |
 | `utils/` | Repositórios e serviços internos do chatbot. |
 
 ## Fluxo de uma mensagem
@@ -88,7 +87,7 @@ a rodada, aguardando nova mensagem do usuário.
 Cada rota protegida valida o Firebase ID Token chamando a Auth API e usa os IDs do
 perfil ativo retornado por `/api/v1/contexto`. `usuario_id` e `empresa_id` fornecidos
 em corpos ou queries não definem a identidade. O contexto verificado instala um
-`mcp_request_context`, filtra memória/skills no ACTA AI e vai em cabeçalhos nas
+`mcp_request_context`, filtra a memória no ACTA AI e vai em cabeçalhos nas
 chamadas MCP; a identidade não fica disponível como argumento do modelo. A rota
 `GET /health` é pública.
 

@@ -4,8 +4,6 @@ from pymongo import MongoClient
 
 from agents.helpers.memory.repository import MemoryRepository
 from agents.helpers.memory.service import MemoryService
-from agents.helpers.skills.repository import SkillsRepository
-from agents.helpers.skills.service import SkillsService
 from clients.mcp_acta_client import MCPRequestContext
 from config import (
     ACTA_MEMORY_RECENT_MESSAGES,
@@ -53,13 +51,6 @@ def get_memory_service() -> MemoryService:
         recent_messages=ACTA_MEMORY_RECENT_MESSAGES,
         summary_every_messages=ACTA_MEMORY_SUMMARY_EVERY_MESSAGES,
     )
-
-
-@lru_cache(maxsize=1)
-def get_skills_service() -> SkillsService:
-    service = SkillsService(SkillsRepository(_mongo_database()))
-    service.ensure_indexes()
-    return service
 
 
 def current_identity() -> MCPRequestContext:

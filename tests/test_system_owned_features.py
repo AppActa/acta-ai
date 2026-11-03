@@ -5,7 +5,6 @@ from langchain_core.messages import AIMessage
 
 import agents.agents as agent_tools
 import clients.memory_client as memory_client
-import clients.skill_client as skill_client
 from clients import mcp_acta_client
 
 
@@ -29,26 +28,6 @@ def test_memory_facade_uses_system_service_instead_of_mcp(monkeypatch):
         memory_client.garantir_sessao("session-1", {"origem": "teste"})
 
     assert calls == [(7, 3, "session-1", {"origem": "teste"})]
-
-
-def test_skill_facade_uses_system_service_instead_of_mcp(monkeypatch):
-    class SkillsService:
-        def obter(self, context, *, nome):
-            return {"slug": nome, "objetivo": "Resumir"}
-
-    monkeypatch.setattr(skill_client, "get_skills_service", lambda: SkillsService(), raising=False)
-    monkeypatch.setattr(
-        skill_client,
-        "call_acta_tool",
-        lambda *_args, **_kwargs: pytest.fail("skills não devem chamar o MCP"),
-        raising=False,
-    )
-
-    with mcp_acta_client.mcp_request_context(usuario_id=7, empresa_id=3):
-        question, skill = skill_client.resolver_comando_skill("/resumo Mostre o andamento")
-
-    assert question == "Mostre o andamento"
-    assert skill["slug"] == "resumo"
 
 
 def test_faq_agent_uses_mcp_tool(monkeypatch):
@@ -107,24 +86,3 @@ def test_conversation_memory_facades_call_the_system_service(monkeypatch):
         "2026-09-01T00:00:00+00:00"
     )
     assert service.listar_mensagens.call_args.kwargs == {"session_id": "s", "limit": 30}
-
-
-def test_skill_crud_facades_use_system_service(monkeypatch):
-    service = Mock()
-    service.criar.return_value = {"slug": "resumo"}
-    service.listar.return_value = [{"slug": "resumo"}]
-    service.obter.return_value = {"slug": "resumo"}
-    service.excluir.return_value = {"excluida": True}
-    monkeypatch.setattr(skill_client, "get_skills_service", lambda: service)
-    markdown = "# Resumo\n\n# objetivo\n\nResumir resultados.\n\n# regras\n\nUsar tópicos."
-
-    with mcp_acta_client.mcp_request_context(usuario_id=7, empresa_id=3):
-        assert skill_client.criar_skill(markdown)["slug"] == "resumo"
-        assert skill_client.listar_skills()[0]["slug"] == "resumo"
-        assert skill_client.obter_skill("resumo")["slug"] == "resumo"
-        assert skill_client.excluir_skill("resumo")["excluida"] is True
-
-    assert service.criar.call_args.kwargs == {"conteudo_markdown": markdown}
-    assert service.listar.call_count == 1
-    assert service.obter.call_count == 1
-    assert service.excluir.call_count == 1
