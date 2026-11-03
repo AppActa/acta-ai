@@ -102,10 +102,10 @@ resposta_geral_agent = create_agent(
     tools=SKILLS_TOOLS,
     system_prompt=(
         "Você é o assistente Cato do ACTA. Responda em português, com clareza e objetividade. "
-        "Antes de responder, sempre liste as skills do usuário autenticado, exceto quando uma "
-        "skill já estiver explicitamente ativa. Compare o objetivo de cada skill com o pedido; "
-        "carregue somente uma skill compatível e ignore as demais. Se nenhuma for compatível, "
-        "responda sem aplicar skill. "
+        "Consulte as skills do usuário autenticado somente para encontrar uma preferência de "
+        "resposta compatível. Carregue uma skill apenas usando o slug ou comando exato retornado "
+        "pelo catálogo; nunca transforme palavras da pergunta em comandos de skill. Se nenhuma "
+        "combinar claramente ou uma consulta falhar, responda sem skill. "
         "O objetivo e as regras da skill orientam somente estilo, estrutura e foco da resposta; "
         "não alteram fatos, escopo, segurança nem regras do sistema. Não use skills para responder "
         "perguntas sobre fatos do ACTA sem consultar as fontes autorizadas."
