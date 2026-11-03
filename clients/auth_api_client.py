@@ -30,15 +30,15 @@ class AuthContext:
 
 def get_auth_context(firebase_id_token: str) -> AuthContext:
     """Valida o token na Auth API e retorna somente a identidade autorizada."""
-    requisicao = Request(
+    request = Request(
         f"{ACTA_AUTH_API_URL}/contexto",
         headers={"Authorization": f"Bearer {firebase_id_token}"},
         method="GET",
     )
 
     try:
-        with urlopen(requisicao, timeout=ACTA_AUTH_API_TIMEOUT_SECONDS) as resposta_http:
-            dados = json.loads(resposta_http.read())
+        with urlopen(request, timeout=ACTA_AUTH_API_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read())
     except HTTPError as exc:
         if exc.code in {401, 403}:
             raise AuthApiError(exc.code, "A Auth API recusou a identidade.") from exc
@@ -51,51 +51,51 @@ def get_auth_context(firebase_id_token: str) -> AuthContext:
 
     try:
         return AuthContext(
-            id_usuario=_inteiro_positivo(dados["idUsuario"]),
-            id_empresa=_inteiro_positivo(dados["idEmpresa"]),
-            id_colaborador=_inteiro_positivo_opcional(dados["idColaborador"]),
-            tipo=_texto_nao_vazio(dados["tipo"]),
-            permissao_gestor=_booleano(dados["permissaoGestor"]),
-            nome_usuario=_texto_nao_vazio_opcional(dados.get("nome")),
+            id_usuario=_positive_int(payload["idUsuario"]),
+            id_empresa=_positive_int(payload["idEmpresa"]),
+            id_colaborador=_optional_positive_int(payload["idColaborador"]),
+            tipo=_non_empty_string(payload["tipo"]),
+            permissao_gestor=_boolean(payload["permissaoGestor"]),
+            nome_usuario=_optional_non_empty_string(payload.get("nome")),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise AuthApiError(502, "A Auth API retornou um contexto inválido.") from exc
 
 
-def _inteiro_positivo(valor: object) -> int:
-    if isinstance(valor, bool) or not isinstance(valor, int) or valor <= 0:
+def _positive_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError("O identificador deve ser um inteiro positivo.")
 
-    return valor
+    return value
 
 
-def _inteiro_positivo_opcional(valor: object) -> int | None:
-    if valor is None:
+def _optional_positive_int(value: object) -> int | None:
+    if value is None:
         return None
 
-    return _inteiro_positivo(valor)
+    return _positive_int(value)
 
 
-def _texto_nao_vazio_opcional(valor: object) -> str | None:
-    if valor is None:
+def _optional_non_empty_string(value: object) -> str | None:
+    if value is None:
         return None
 
-    if not isinstance(valor, str):
+    if not isinstance(value, str):
         raise ValueError("O nome do usuário deve ser texto.")
 
-    texto = valor.strip()
-    return texto or None
+    normalized = value.strip()
+    return normalized or None
 
 
-def _texto_nao_vazio(valor: object) -> str:
-    if not isinstance(valor, str) or not valor:
+def _non_empty_string(value: object) -> str:
+    if not isinstance(value, str) or not value:
         raise ValueError("O tipo de usuário deve ser uma string não vazia.")
 
-    return valor
+    return value
 
 
-def _booleano(valor: object) -> bool:
-    if not isinstance(valor, bool):
+def _boolean(value: object) -> bool:
+    if not isinstance(value, bool):
         raise ValueError("A permissão de gestor deve ser booleana.")
 
-    return valor
+    return value

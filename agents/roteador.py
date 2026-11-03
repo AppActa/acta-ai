@@ -18,15 +18,8 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
     ),
     "ciclo": (
         "Consultar dados reais de um ciclo específico do ACTA: fase, status, riscos ou "
-        "andamento e treinamentos previstos, relacionados ou registrados no ciclo; também "
-        "identificar e resumir o ciclo do usuário quando perguntar 'qual é o meu ciclo?', "
-        "'como está meu ciclo?' ou 'qual ciclo está ativo para mim?'. Essas perguntas "
-        "são consultas de negócio do ACTA, nunca pedidos fora de escopo; use o ciclo "
-        "ativo da requisição e, se não houver, descubra os ciclos autorizados e peça "
-        "escolha quando houver mais de um. "
-        "registrar causas raiz, adicionar itens ao Ishikawa ou criar treinamentos quando "
-        "solicitado. Perguntas como 'Quais treinamentos estão previstos?' consultam os "
-        "treinamentos do ciclo, mesmo sem citar ACTA explicitamente. Não deve ser escolhido para explicar o método "
+        "andamento; também registrar causas raiz, adicionar itens ao Ishikawa ou criar "
+        "treinamentos quando solicitado. Não deve ser escolhido para explicar o método "
         "PDCA, suas etapas ou conceitos gerais. Exemplos: 'Como está o ciclo 12?', "
         "'Qual a fase atual do ciclo 12?'"
     ),
@@ -67,8 +60,8 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
     """Seleciona a rota, os especialistas e o escopo de ciclos com JEV."""
 
     try:
-        with TypeSafeClient(api_key=JEV_API_KEY) as cliente:
-            roteamento = cliente.system_one(
+        with TypeSafeClient(api_key=JEV_API_KEY) as client:
+            routing = client.system_one(
                 state={
                     "mensagem_usuario": pergunta,
                     "contexto_conversa": contexto_conversa,
@@ -92,12 +85,7 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                             "fora_escopo": (
                                 "Qualquer pedido concreto não relacionado ao ACTA, seus recursos "
                                 "ou PDCA, incluindo código, receitas, recomendações e conteúdo "
-                                "geral. Perguntas sobre treinamentos previstos ou registrados em "
-                                "um ciclo e perguntas pessoais como 'qual é o meu ciclo?' ou "
-                                "'como está meu ciclo?' são relacionadas ao ACTA, mesmo sem "
-                                "mencionar o sistema; encaminhe-as como negócio para consultar "
-                                "o ciclo autorizado do usuário. "
-                                "Use esta categoria para impedir que pedidos alheios ao ACTA sejam respondidos."
+                                "geral. Use esta categoria para impedir que o pedido seja respondido."
                             ),
                         },
                     ),
@@ -113,28 +101,28 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                         },
                     ),
                     **{
-                        nome: Noul(
+                        name: Noul(
                             instructions=(
                                 "A mensagem atual, considerando o contexto recente, deve ser "
                                 "encaminhada a este especialista? Só marque quando houver relação "
                                 "direta com o ACTA e com este domínio. Nunca encaminhe pedidos "
                                 "fora do ACTA, como código ou receita. Considere o contexto para "
-                                f"mensagens curtas de continuação. Domínio e exemplos: {descricao}"
+                                f"mensagens curtas de continuação. Domínio e exemplos: {description}"
                             ),
                         )
-                        for nome, descricao in DESCRICOES_ESPECIALISTAS.items()
+                        for name, description in DESCRICOES_ESPECIALISTAS.items()
                     },
                 },
             )
-            tipo_mensagem = roteamento.choices["tipo_mensagem"].choice
-            if tipo_mensagem == "conversa":
+            message_type = routing.choices["tipo_mensagem"].choice
+            if message_type == "conversa":
                 return {
                     "rota": "resposta_geral",
                 }
-            if tipo_mensagem == "fora_escopo":
+            if message_type == "fora_escopo":
                 logger.info("Mensagem classificada fora do escopo do ACTA")
                 return {"rota": "fora_escopo"}
-            if tipo_mensagem != "negocio":
+            if message_type != "negocio":
                 return {"rota": "falha_classificacao"}
 
     except Exception:  # noqa: BLE001 - o guardrail já aprovou a entrada
@@ -142,27 +130,27 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
         return {"rota": "falha_classificacao"}
 
     # Os Noul retornam probabilidades; 0.5 separa especialistas relevantes dos demais.
-    selecionados = [
-        nome
-        for nome in DESCRICOES_ESPECIALISTAS
-        if roteamento.nouls[nome].noul >= 0.5
+    selected = [
+        name
+        for name in DESCRICOES_ESPECIALISTAS
+        if routing.nouls[name].noul >= 0.5
     ]
-    notas = {
-        nome: float(roteamento.nouls[nome].noul)
-        for nome in DESCRICOES_ESPECIALISTAS
+    scores = {
+        name: float(routing.nouls[name].noul)
+        for name in DESCRICOES_ESPECIALISTAS
     }
     logger.warning(
         "Roteamento JEV: tipo=%s escopo=%s notas={%s} selecionados=%s",
-        tipo_mensagem,
-        roteamento.choices["escopo_ciclos"].choice,
-        ", ".join(f"{nome}={nota:.2f}" for nome, nota in notas.items()),
-        selecionados,
+        message_type,
+        routing.choices["escopo_ciclos"].choice,
+        ", ".join(f"{name}={score:.2f}" for name, score in scores.items()),
+        selected,
     )
-    if not selecionados:
+    if not selected:
         return {"rota": "escopo_nao_identificado"}
 
     return {
         "rota": "especialistas",
-        "especialistas": selecionados,
-        "escopo_ciclos": roteamento.choices["escopo_ciclos"].choice,
+        "especialistas": selected,
+        "escopo_ciclos": routing.choices["escopo_ciclos"].choice,
     }

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Lista fechada: operações novas/desconhecidas não são tratadas como leitura.
 TOOLS_LEITURA = frozenset({
-    "faq_retriever", "ciclos_buscar_por_descricao", "ciclos_listar", "ciclo_visao_geral",
+    "faq_retriever", "ciclos_buscar_por_descricao", "ciclo_visao_geral",
     "ciclo_problema_principal", "ciclo_causas_raiz", "ciclo_ishikawa",
     "ciclo_riscos_pendencias", "ciclo_treinamentos", "ciclo_participantes",
     "ciclo_relatorio_completo", "tarefas_consultar", "tarefas_atrasadas",

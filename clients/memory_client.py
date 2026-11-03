@@ -6,7 +6,7 @@ from typing import Any
 from agents.helpers.runtime import get_memory_service
 from clients.mcp_acta_client import current_mcp_request_context
 
-_MAPA_PAPEIS = {
+_ROLE_MAP = {
     "human": "usuario",
     "user": "usuario",
     "ai": "assistente",
@@ -26,7 +26,7 @@ def salvar_mensagem(
     get_memory_service().salvar_mensagem(
         current_mcp_request_context(),
         session_id=session_id,
-        role=_MAPA_PAPEIS.get(role.lower(), role.lower()),
+        role=_ROLE_MAP.get(role.lower(), role.lower()),
         content=content,
         agent=agent,
         metadata=metadata or {},
@@ -40,8 +40,8 @@ def obter_contexto_detalhado(session_id: str, query: str = "") -> dict[str, Any]
 
 
 def obter_contexto(session_id: str, query: str = "") -> str:
-    resultado = obter_contexto_detalhado(session_id, query)
-    return str(resultado.get("contexto", ""))
+    result = obter_contexto_detalhado(session_id, query)
+    return str(result.get("contexto", ""))
 
 
 def obter_material_resumo(session_id: str, *, forcar: bool = False) -> dict[str, Any]:
@@ -67,16 +67,12 @@ def listar_mensagens(session_id: str, limit: int = 30) -> list[dict[str, Any]]:
 
 
 def atualizar_resumo(session_id: str, resumo: str, resumido_ate: str | datetime) -> None:
-    data_resumo = (
-        datetime.fromisoformat(resumido_ate)
-        if isinstance(resumido_ate, str)
-        else resumido_ate
-    )
+    marker = datetime.fromisoformat(resumido_ate) if isinstance(resumido_ate, str) else resumido_ate
     get_memory_service().atualizar_resumo(
         current_mcp_request_context(),
         session_id=session_id,
         resumo=resumo,
-        resumido_ate=data_resumo,
+        resumido_ate=marker,
     )
 
 
