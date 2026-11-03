@@ -2,10 +2,8 @@
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
-from langgraph.types import Overwrite
 
 from agents.estado import (
-    NOS_ESPECIALISTAS,
     Estado,
     decidir_pos_guardrail_entrada,
     decidir_pos_guardrail_saida,
@@ -17,9 +15,16 @@ from agents.estado import (
     no_resposta_geral,
     no_roteador,
 )
+from agents.estado import (
+    _pergunta_abrangente as _pergunta_comparativa,
+)
 from agents.guardrail import anonimizar_entrada, guardrail_entrada
 from agents.skill_builder import gerar_markdown_skill
-from clients.mcp_acta_client import mcp_identity_scope, mcp_tool_cache_context
+from clients.mcp_acta_client import (
+    mcp_cycle_scope_context,
+    mcp_identity_scope,
+    mcp_tool_cache_context,
+)
 from clients.skill_client import (
     SkillClientError,
     criar_skill,
@@ -28,13 +33,13 @@ from clients.skill_client import (
 )
 
 
-def _texto_resposta(conteudo: object) -> str:
+def _texto_resposta(content: object) -> str:
     """Retorna somente texto legível quando o modelo entrega blocos multimodais."""
-    if isinstance(conteudo, str):
-        return conteudo.strip()
-    if isinstance(conteudo, list):
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
         partes = []
-        for bloco in conteudo:
+        for bloco in content:
             if isinstance(bloco, str):
                 partes.append(bloco)
             elif isinstance(bloco, dict) and bloco.get("type") == "text":
@@ -43,29 +48,29 @@ def _texto_resposta(conteudo: object) -> str:
                     partes.append(texto.strip())
         if partes:
             return "\n".join(partes)
-    return str(conteudo).strip()
+    return str(content).strip()
 
 
 def _normalizar_ids_ciclo(id_ciclo: int | list[int] | None) -> list[int]:
     if id_ciclo is None:
         return []
-    ids_ciclo = [id_ciclo] if isinstance(id_ciclo, int) else id_ciclo
-    if any(not isinstance(ciclo_id, int) or ciclo_id <= 0 for ciclo_id in ids_ciclo):
+    raw_ids = [id_ciclo] if isinstance(id_ciclo, int) else id_ciclo
+    if any(not isinstance(cycle_id, int) or cycle_id <= 0 for cycle_id in raw_ids):
         raise ValueError("id_ciclo deve conter somente inteiros positivos.")
-    return list(dict.fromkeys(ids_ciclo))
+    return list(dict.fromkeys(raw_ids))
 
 
-def _criar_skill_pelo_chatbot(pedido: str) -> str:
+def _criar_skill_pelo_chatbot(request: str) -> str:
     """Gera o contrato mínimo e só persiste depois da validação final no MCP."""
 
-    pedido_anonimizado, mapa_pii = anonimizar_entrada(pedido)
-    if mapa_pii:
+    anonymized, pii_map = anonimizar_entrada(request)
+    if pii_map:
         raise SkillClientError("Não inclua dados pessoais na definição de uma skill.")
-    resultado_guardrail = guardrail_entrada(pedido_anonimizado)
-    if not resultado_guardrail["valido"]:
-        return resultado_guardrail["mensagem"]
+    guardrail_result = guardrail_entrada(anonymized)
+    if not guardrail_result["valido"]:
+        return guardrail_result["mensagem"]
 
-    markdown = gerar_markdown_skill(pedido_anonimizado)
+    markdown = gerar_markdown_skill(anonymized)
     skill = criar_skill(markdown)
     return (
         f"Skill criada: {skill['comando']}\n\n"
@@ -76,45 +81,40 @@ def _criar_skill_pelo_chatbot(pedido: str) -> str:
 def construir_fluxo():
     """Monta e compila o grafo principal com memória por sessão."""
 
-    grafo = StateGraph(Estado)
+    graph = StateGraph(Estado)
 
-    grafo.add_node("guardrail_entrada", no_guardrail_entrada)
-    grafo.add_node("roteador", no_roteador)
-    for nome, no in NOS_ESPECIALISTAS.items():
-        grafo.add_node(nome, no)
-    grafo.add_node("orquestrador", no_orquestrador)
-    grafo.add_node("resposta_geral", no_resposta_geral)
-    grafo.add_node("juiz", no_juiz)
-    grafo.add_node("guardrail_saida", no_guardrail_saida)
+    graph.add_node("guardrail_entrada", no_guardrail_entrada)
+    graph.add_node("roteador", no_roteador)
+    graph.add_node("orquestrador", no_orquestrador)
+    graph.add_node("resposta_geral", no_resposta_geral)
+    graph.add_node("juiz", no_juiz)
+    graph.add_node("guardrail_saida", no_guardrail_saida)
 
-    grafo.set_entry_point("guardrail_entrada")
-    grafo.add_conditional_edges(
+    graph.set_entry_point("guardrail_entrada")
+    graph.add_conditional_edges(
         "guardrail_entrada",
         decidir_pos_guardrail_entrada,
         {"roteador": "roteador", "fim": END},
     )
-    grafo.add_conditional_edges(
+    graph.add_conditional_edges(
         "roteador",
         decidir_pos_roteador,
         {
-            **{nome: nome for nome in NOS_ESPECIALISTAS},
+            "especialistas": "orquestrador",
             "resposta_geral": "resposta_geral",
             "fim": END,
         },
     )
-    for nome in NOS_ESPECIALISTAS:
-        grafo.add_edge(nome, "orquestrador")
-
-    grafo.add_edge("resposta_geral", "guardrail_saida")
-    grafo.add_edge("orquestrador", "guardrail_saida")
-    grafo.add_conditional_edges(
+    graph.add_edge("resposta_geral", "guardrail_saida")
+    graph.add_edge("orquestrador", "guardrail_saida")
+    graph.add_conditional_edges(
         "guardrail_saida",
         decidir_pos_guardrail_saida,
         {"juiz": "juiz", "fim": END},
     )
-    grafo.add_edge("juiz", END)
+    graph.add_edge("juiz", END)
 
-    return grafo.compile(checkpointer=MemorySaver())
+    return graph.compile(checkpointer=MemorySaver())
 
 
 fluxo_agentes = construir_fluxo()
@@ -141,58 +141,60 @@ def _executar_fluxo_acta_com_status(
 ) -> tuple[str, bool]:
     """Executa uma rodada do chatbot preservando o histórico pelo ``session_id``."""
 
-    pergunta_original = pergunta_usuario.strip()
-    if eh_pedido_criacao_skill(pergunta_original):
-        return _criar_skill_pelo_chatbot(pergunta_original), False
+    raw_question = pergunta_usuario.strip()
+    if eh_pedido_criacao_skill(raw_question):
+        return _criar_skill_pelo_chatbot(raw_question), False
 
-    pergunta, skill_ativa = resolver_comando_skill(pergunta_original)
-    sessao = session_id.strip()
-    if not pergunta:
+    question, active_skill = resolver_comando_skill(raw_question)
+    session_key = session_id.strip()
+    if not question:
         raise ValueError("pergunta_usuario é obrigatória.")
-    if not sessao:
+    if not session_key:
         raise ValueError("session_id é obrigatório.")
-    ids_ciclo = _normalizar_ids_ciclo(id_ciclo)
-    if ciclo_ativo is not None and ciclo_ativo not in ids_ciclo:
+    cycle_ids = _normalizar_ids_ciclo(id_ciclo)
+    if ciclo_ativo is not None and ciclo_ativo not in cycle_ids:
         raise ValueError("ciclo_ativo deve estar presente em id_ciclo.")
     if ciclo_ativo is not None:
-        ids_ciclo.remove(ciclo_ativo)
-        ids_ciclo.insert(0, ciclo_ativo)
+        cycle_ids.remove(ciclo_ativo)
+        cycle_ids.insert(0, ciclo_ativo)
 
-    estado_inicial = {
-        "messages": [{"role": "human", "content": pergunta}],
+    initial_state = {
+        "messages": [{"role": "human", "content": question}],
         "rota": "",
         "especialistas": [],
-        "respostas_especialistas": Overwrite([]),
+        "respostas_especialistas": [],
         "evidencias_tools": [],
         "mapa_pii": {},
-        "session_id": sessao,
-        "id_ciclo": ids_ciclo,
+        "session_id": session_key,
+        "id_ciclo": cycle_ids,
         "ciclo_ativo": ciclo_ativo,
         "contexto_memoria": "",
         "resposta_final": "",
-        "skill_ativa": skill_ativa,
+        "skill_ativa": active_skill,
         "nome_usuario": nome_usuario,
     }
-    with mcp_tool_cache_context():
-        estado_final = fluxo_agentes.invoke(
-            estado_inicial,
+    query_scope = cycle_ids
+    if ciclo_ativo is not None and not _pergunta_comparativa(question):
+        query_scope = [ciclo_ativo]
+    with mcp_tool_cache_context(), mcp_cycle_scope_context(query_scope):
+        final_state = fluxo_agentes.invoke(
+            initial_state,
             config={
                 "configurable": {
-                    "thread_id": f"{mcp_identity_scope()}:{sessao}",
+                    "thread_id": f"{mcp_identity_scope()}:{session_key}",
                 }
             },
         )
 
-    resposta = _texto_resposta(estado_final.get("resposta_final", ""))
-    if resposta:
-        return resposta, bool(estado_final.get("entrada_bloqueada"))
+    answer = _texto_resposta(final_state.get("resposta_final", ""))
+    if answer:
+        return answer, bool(final_state.get("entrada_bloqueada"))
 
-    mensagens = estado_final.get("messages", [])
-    if mensagens:
-        return _texto_resposta(mensagens[-1].content), bool(
-            estado_final.get("entrada_bloqueada")
-        )
-    return "Não foi possível gerar uma resposta.", bool(estado_final.get("entrada_bloqueada"))
+    messages = final_state.get("messages", [])
+    if messages:
+        content = messages[-1].content
+        return _texto_resposta(content), bool(final_state.get("entrada_bloqueada"))
+    return "Não foi possível gerar uma resposta.", bool(final_state.get("entrada_bloqueada"))
 
 
 def get_response(

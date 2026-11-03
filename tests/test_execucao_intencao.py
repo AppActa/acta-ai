@@ -229,24 +229,17 @@ def test_clarification_stops_other_specialists_and_bypasses_synthesis(monkeypatc
     def clarify(_):
         raise EsclarecimentoNecessario("Qual título deseja?")
 
-    monkeypatch.setitem(state.REGISTRO_ESPECIALISTAS, "ciclo", clarify)
-    monkeypatch.setitem(
-        state.REGISTRO_ESPECIALISTAS,
-        "tarefas",
-        lambda _: pytest.fail("Rodada deve estar encerrada"),
-    )
+    monkeypatch.setattr(state, "REGISTRO_ESPECIALISTAS", {
+        "primeiro": clarify, "segundo": lambda _: pytest.fail("Rodada deve estar encerrada"),
+    })
     monkeypatch.setattr(state, "orquestrador", type("NoSynthesis", (), {"invoke": lambda *_: pytest.fail("Não substituir esclarecimento")})())
-    respostas = state.executar_especialistas(
-        {"messages": [HumanMessage(content="Crie um formulário")], "especialistas": ["ciclo", "tarefas"], "id_ciclo": [1]}
-    )
     result = state.no_orquestrador({
         "messages": [HumanMessage(content="Crie um formulário")], "rota": "especialistas",
-        "especialistas": ["ciclo", "tarefas"], "respostas_especialistas": respostas,
-        "id_ciclo": [1], "session_id": "clarification-test",
+        "especialistas": ["primeiro", "segundo"], "id_ciclo": [1], "session_id": "clarification-test",
     })
     assert result["messages"][0]["content"] == "Qual título deseja?"
     assert result["rota"] == "interrompido"
-    assert len(respostas) == 1
+    assert len(result["respostas_especialistas"]) == 1
 
 
 def test_specialist_cannot_claim_success_with_pending_correction(monkeypatch, transport):
@@ -259,11 +252,7 @@ def test_specialist_cannot_claim_success_with_pending_correction(monkeypatch, tr
         return "Registrado com sucesso!"
 
     monkeypatch.setitem(state.REGISTRO_ESPECIALISTAS, "ciclo", propose)
-    result = state.executar_especialistas({
-        "messages": [HumanMessage(content="Registre a causa")],
-        "especialistas": ["ciclo"],
-        "id_ciclo": [8],
-    })
+    result = state.executar_especialistas({"messages": [HumanMessage(content="Registre a causa")], "especialistas": ["ciclo"]})
     assert result[0]["interrompido"] is True
     assert "sucesso" not in result[0]["resposta"]
     assert transport == []

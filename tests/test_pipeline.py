@@ -27,21 +27,9 @@ class FakeAgent:
         return self
 
 
-class FakeToolAgent(FakeAgent):
-    def __init__(self, tool, arguments: dict, answer: str) -> None:
-        super().__init__(answer)
-        self.tool = tool
-        self.arguments = arguments
-
-    def invoke(self, payload: dict) -> dict:
-        self.calls.append(payload)
-        self.tool.invoke(self.arguments)
-        return {"messages": [*payload["messages"], AIMessage(content=self.answer)]}
-
-
 def test_model_text_blocks_are_rendered_as_plain_text():
     message = AIMessage(content=[{"type": "text", "text": "Rascunho criado."}])
-    assert pipeline_module._texto_resposta(message.content) == "Rascunho criado."
+    assert state_module._texto_mensagem(message) == "Rascunho criado."
 
 
 class FakeJevClient:
@@ -273,6 +261,7 @@ def test_cycle_agent_receives_authorized_cycle_id(monkeypatch) -> None:
     monkeypatch.setattr(
         "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
     )
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setitem(
         state_module.REGISTRO_ESPECIALISTAS,
@@ -318,6 +307,7 @@ def test_get_response_accepts_legacy_single_cycle_id(monkeypatch) -> None:
         "ciclo",
         lambda state: state_module._executar_agente(cycle_agent, state),
     )
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(
         state_module,
         "guardrail_saida",
@@ -336,6 +326,19 @@ def test_cycle_normalization_accepts_more_than_20_unique_ids() -> None:
     cycle_ids = [*range(1, 24), 1]
 
     assert pipeline_module._normalizar_ids_ciclo(cycle_ids) == list(range(1, 24))
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Compare os ciclos", True),
+        ("Compara os ciclos", True),
+        ("Faça uma análise comparativa", True),
+        ("Comparecimento na reunião", False),
+    ],
+)
+def test_comparative_question_detection(question: str, expected: bool) -> None:
+    assert pipeline_module._pergunta_comparativa(question) is expected
 
 
 def test_router_uses_structured_comparative_scope_for_multiple_cycles(monkeypatch) -> None:
@@ -384,8 +387,7 @@ def test_cycle_query_without_scope_does_not_call_mcp_tools(monkeypatch) -> None:
     )
     _set_jev(monkeypatch, selected=("ciclo",))
     monkeypatch.setattr(
-        "tools.ciclo_tools.call_acta_tool",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
+        state_module, "call_acta_tool", lambda *args, **kwargs: calls.append((args, kwargs))
     )
     cycle_agent = FakeAgent("Informe o ciclo pelo título ou descrição.")
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
@@ -426,14 +428,31 @@ def test_cycle_query_scope_comes_from_router_decision(
     assert state_module._ciclos_para_consulta(state) == expected
 
 
-def test_specialists_are_parallel_graph_nodes() -> None:
+def test_specialists_are_functions_not_graph_nodes() -> None:
     nodes = set(fluxo_agentes.get_graph().nodes)
 
-    assert set(state_module.NOS_ESPECIALISTAS).issubset(nodes)
-    assert "especialistas" not in nodes
-    assert state_module.decidir_pos_roteador(
-        {"rota": "especialistas", "especialistas": ["ciclo", "tarefas"]}
-    ) == ["ciclo", "tarefas"]
+    assert nodes == {
+        "__start__",
+        "guardrail_entrada",
+        "roteador",
+        "orquestrador",
+        "resposta_geral",
+        "juiz",
+        "guardrail_saida",
+        "__end__",
+    }
+    assert nodes.isdisjoint(
+        {
+            "rag",
+            "ciclo",
+            "tarefas",
+            "colaboradores",
+            "formularios",
+            "indicadores",
+            "relatorios",
+            "especialistas",
+        }
+    )
 
 
 def test_router_can_call_multiple_specialists(monkeypatch) -> None:
@@ -453,6 +472,7 @@ def test_router_can_call_multiple_specialists(monkeypatch) -> None:
     monkeypatch.setattr(
         "tools.tarefas_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
     )
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "ciclo_agent", cycle_agent)
     monkeypatch.setattr(state_module, "tarefas_agent", tasks_agent)
     monkeypatch.setitem(
@@ -517,6 +537,7 @@ def test_orchestrator_always_uses_llm_for_multiple_answers(monkeypatch) -> None:
     monkeypatch.setattr(
         "tools.tarefas_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
     )
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(state_module, "orquestrador", orchestrator)
     monkeypatch.setattr(
         state_module,
@@ -596,6 +617,7 @@ def test_active_skill_formats_only_after_specialists(monkeypatch) -> None:
     monkeypatch.setattr(
         "tools.ciclo_tools.call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"}
     )
+    monkeypatch.setattr(state_module, "call_acta_tool", lambda *_args, **_kwargs: {"status": "ok"})
     monkeypatch.setattr(
         pipeline_module,
         "resolver_comando_skill",
@@ -737,19 +759,14 @@ def test_assisted_creation_stops_on_prompt_injection(monkeypatch) -> None:
 
 def test_lesson_request_is_routed_to_the_lessons_agent_and_mcp_tool(monkeypatch) -> None:
     _disable_external_memory(monkeypatch)
-    from tools import licoes_tools
-
     tool_calls = []
-
-    def fake_call(name, arguments):
-        tool_calls.append((name, arguments))
-        return {"status": "ok", "resposta": "Resumo das lições.", "referencias": [2]}
-
-    monkeypatch.setattr(licoes_tools, "call_acta_tool", fake_call)
     monkeypatch.setattr(
         state_module,
-        "licoes_agent",
-        FakeToolAgent(licoes_tools.resumir_licoes_aprendidas, {}, "Resumo das lições."),
+        "call_acta_tool",
+        lambda name, arguments: (
+            tool_calls.append((name, arguments))
+            or {"status": "ok", "resposta": "Resumo das lições.", "referencias": [2]}
+        ),
     )
     monkeypatch.setattr(
         state_module,
