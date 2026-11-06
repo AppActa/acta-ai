@@ -24,11 +24,25 @@ PII = [
 ]
 
 _CRITERIOS_GUARDRAIL = {
-    "APROVADO": "Conteúdo legítimo, seguro e relacionado ao ACTA ou ao ciclo PDCA.",
+    "APROVADO": (
+        "A mensagem é legítima e segura. Aprove perguntas sobre o ACTA e o trabalho "
+        "realizado nele: ciclos PDCA (andamento, status, etapas, prazos e responsáveis), "
+        "tarefas do usuário (incluindo pendências e atrasos), treinamentos, materiais, "
+        "formulários, colaboradores, indicadores, relatórios, lições aprendidas e uso ou "
+        "navegação no aplicativo. Também aprove dúvidas sobre a aplicação do método PDCA "
+        "no trabalho. As sugestões do app são exemplos válidos: 'Como está meu ciclo?', "
+        "'Quais tarefas tenho hoje?', 'Tenho algo atrasado?' e 'Quais treinamentos devo "
+        "fazer?'. Não exija que o usuário escreva 'ACTA' ou explique o contexto: uma "
+        "pergunta curta ou coloquial deve ser aprovada quando puder razoavelmente se "
+        "referir ao aplicativo ou ao trabalho do usuário. Este guardrail verifica segurança, "
+        "não relevância temática. Uma mensagem segura sobre assunto alheio ao ACTA — como "
+        "entretenimento, notícias ou recomendações pessoais — também recebe APROVADO aqui; "
+        "o roteador do chatbot decide depois se ela está fora do escopo e como responder."
+    ),
     "OFENSIVO": "Contém insultos, assédio ou discurso de ódio.",
     "PERIGOSO": "Pede ou fornece instruções que podem causar dano físico ou psicológico.",
     "ILICITO": "Pede auxílio para atividade ilegal ou fraudulenta.",
-    "POLITICO": "É opinião ou debate sobre política, partidos ou eleições.",
+    "POLITICO": "A mensagem pede opinião, debate ou persuasão sobre política, partidos ou eleições. Uma consulta operacional do ACTA que apenas mencione um desses temas não basta para esta classificação.",
 }
 
 
