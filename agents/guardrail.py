@@ -25,26 +25,26 @@ PII = [
 
 _CRITERIOS_GUARDRAIL = {
     "APROVADO": (
-        "A mensagem é legítima e segura. Aprove perguntas sobre o ACTA e o trabalho "
-        "realizado nele: ciclos PDCA (andamento, status, etapas, prazos e responsáveis), "
-        "tarefas do usuário (incluindo pendências e atrasos), treinamentos, materiais, "
-        "formulários, colaboradores, indicadores, relatórios, lições aprendidas e uso ou "
-        "navegação no aplicativo. Também aprove dúvidas sobre a aplicação do método PDCA "
-        "no trabalho. As sugestões do app são exemplos válidos: 'Como está meu ciclo?', "
-        "'Quais tarefas tenho hoje?', 'Tenho algo atrasado?' e 'Quais treinamentos devo "
-        "fazer?'. Não exija que o usuário escreva 'ACTA' ou explique o contexto: uma "
-        "pergunta curta ou coloquial deve ser aprovada quando puder razoavelmente se "
-        "referir ao aplicativo ou ao trabalho do usuário. Este guardrail verifica segurança, "
-        "não relevância temática. Uma mensagem segura sobre assunto alheio ao ACTA — como "
-        "entretenimento, notícias ou recomendações pessoais — também recebe APROVADO aqui; "
-        "o roteador do chatbot decide depois se ela está fora do escopo e como responder."
+        "A mensagem é legítima e segura. No contexto do ACTA, considere dentro do escopo "
+        "perguntas sobre gestão de ciclos PDCA e os dados de trabalho relacionados: "
+        "andamento, fase, status, prazos e responsáveis do ciclo; tarefas do usuário, "
+        "incluindo o que deve fazer hoje e o que está atrasado; treinamentos e materiais "
+        "relacionados ao ciclo; formulários, colaboradores, indicadores, relatórios, lições "
+        "aprendidas e uso do aplicativo. As sugestões exibidas no chatbot são consultas "
+        "operacionais do ACTA/PDCA, mesmo sem mencionar essas siglas: 'Como está meu ciclo?' "
+        "pergunta pelo andamento do ciclo ativo; 'Quais tarefas tenho hoje?' consulta as "
+        "tarefas do usuário; 'Tenho algo atrasado?' consulta pendências e prazos; 'Quais "
+        "treinamentos devo fazer?' consulta os treinamentos do ciclo. Não as interprete como "
+        "perguntas genéricas ou fora do escopo por serem curtas ou coloquiais. Perguntas "
+        "conceituais sobre como aplicar o PDCA no trabalho também estão dentro do escopo. "
+        "Assuntos sem relação com o ACTA, ciclos PDCA ou trabalho no aplicativo — por "
+        "exemplo, entretenimento, notícias ou recomendações pessoais — estão fora do escopo."
     ),
     "OFENSIVO": "Contém insultos, assédio ou discurso de ódio.",
     "PERIGOSO": "Pede ou fornece instruções que podem causar dano físico ou psicológico.",
     "ILICITO": "Pede auxílio para atividade ilegal ou fraudulenta.",
     "POLITICO": "A mensagem pede opinião, debate ou persuasão sobre política, partidos ou eleições. Uma consulta operacional do ACTA que apenas mencione um desses temas não basta para esta classificação.",
 }
-
 
 def _classificar_com_jev(texto: str, *, campo: str) -> str:
     with TypeSafeClient(api_key=JEV_API_KEY) as client:

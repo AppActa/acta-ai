@@ -36,7 +36,9 @@ from agents.memoria import consolidar_memoria
 from agents.prompts.prompt_roteador import PERSONA_SISTEMA
 from agents.roteador import rotear
 from clients.mcp_acta_client import (
+    MCPActaError,
     call_acta_tool,
+    current_mcp_request_context,
     mcp_discovered_cycle_scope_context,
     mcp_tool_cache_context,
     mcp_tool_evidence_context,
@@ -194,6 +196,22 @@ def _executar_agente(
         "nada foi executado: use o motivo para corrigir os argumentos e proponha novamente. "
         "Nunca afirme sucesso de uma proposta corrigida, bloqueada ou sem resultado real."
     ]
+    if estado.get("nome_usuario"):
+        context_parts.append(
+            "Nome do usuário autenticado: "
+            f"{estado['nome_usuario']}. Use-o apenas para identificar registros do próprio usuário; "
+            "não mostre dados de outras pessoas em respostas sobre itens pessoais."
+        )
+    try:
+        authenticated_user_id = current_mcp_request_context().usuario_id
+    except MCPActaError:
+        authenticated_user_id = None
+    if authenticated_user_id is not None:
+        context_parts.append(
+            "ID interno do usuário autenticado para filtrar registros pessoais: "
+            f"{authenticated_user_id}. Use-o somente no campo id_responsavel ou id_usuario "
+            "quando a ferramenta exigir. Nunca revele esse ID na resposta."
+        )
     cycle_ids = estado.get("id_ciclo", [])
     if cycle_ids:
         if len(cycle_ids) > 1 and estado.get("ciclo_ativo") is None:
