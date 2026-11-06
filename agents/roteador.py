@@ -8,6 +8,20 @@ from config import JEV_API_KEY
 
 logger = logging.getLogger(__name__)
 
+EXEMPLOS_PERGUNTAS_OPERACIONAIS = (
+    "Perguntas curtas sugeridas no ACTA e seu significado operacional:\n"
+    "- 'Como está meu ciclo?' indica consultar o andamento do ciclo do usuário; "
+    "encaminhe a ciclo.\n"
+    "- 'Quais tarefas tenho hoje?' indica consultar as tarefas do usuário com prazo "
+    "para hoje; encaminhe a tarefas.\n"
+    "- 'Tenho algo atrasado?' indica consultar tarefas atrasadas atribuídas ao usuário, "
+    "inclusive entre ciclos; encaminhe a tarefas.\n"
+    "- 'Quais treinamentos devo fazer?' indica consultar treinamentos atribuídos ao "
+    "usuário no ciclo; encaminhe a ciclo.\n"
+    "Essas frases são pedidos operacionais do ACTA, não conversa casual nem pedidos "
+    "fora de escopo."
+)
+
 DESCRICOES_ESPECIALISTAS: dict[str, str] = {
     "rag": (
         "Dúvidas conceituais e explicações que não exigem consultar dados de um ciclo: "
@@ -18,10 +32,15 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
     ),
     "ciclo": (
         "Consultar dados reais de um ciclo específico do ACTA: fase, status, riscos ou "
-        "andamento; também registrar causas raiz, adicionar itens ao Ishikawa ou criar "
-        "treinamentos quando solicitado. Não deve ser escolhido para explicar o método "
-        "PDCA, suas etapas ou conceitos gerais. Exemplos: 'Como está o ciclo 12?', "
-        "'Qual a fase atual do ciclo 12?'"
+        "andamento; consultar treinamentos relacionados ao ciclo; também registrar causas "
+        "raiz, adicionar itens ao Ishikawa ou criar treinamentos quando solicitado. Se a "
+        "pessoa disser 'meu ciclo' sem informar um número, use o ciclo ativo indicado no "
+        "contexto da conversa. 'Como está meu ciclo?' pede o andamento desse ciclo; "
+        "'Quais treinamentos devo fazer?' pede os treinamentos atribuídos ao usuário. "
+        "Não deve ser escolhido para explicar o método PDCA, suas etapas ou conceitos gerais. "
+        "Exemplos: 'Como está meu ciclo?', "
+        "'Como está o ciclo 12?', 'Qual a fase atual do ciclo 12?' e "
+        "'Quais treinamentos devo fazer?'"
     ),
     "licoes": (
         "Consultar, resumir, comparar ou registrar lições aprendidas de ciclos. "
@@ -31,9 +50,12 @@ DESCRICOES_ESPECIALISTAS: dict[str, str] = {
         "'Quais lições foram registradas?'"
     ),
     "tarefas": (
-        "Consultar, criar ou atualizar tarefas e seus status: responsáveis, prazos, atrasos, "
-        "dependências ou justificativas. Exemplos: 'Quais tarefas estão atrasadas?', "
-        "'Crie uma tarefa' e 'Atualize o status da tarefa'."
+        "Consultar, criar ou atualizar tarefas do usuário e seus status: tarefas de hoje, "
+        "pendências, responsáveis, prazos, atrasos, dependências ou justificativas. "
+        "'Quais tarefas tenho hoje?' pede tarefas do usuário com prazo para hoje; "
+        "'Tenho algo atrasado?' pede tarefas do usuário em atraso, inclusive entre ciclos. "
+        "Exemplos: 'Quais tarefas estão "
+        "atrasadas?', 'Crie uma tarefa' e 'Atualize o status da tarefa'."
     ),
     "colaboradores": (
         "Consultar colaboradores, competências, disponibilidade, carga ou realocação. "
@@ -73,7 +95,8 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                             "quando houver. Mensagens de continuação herdam o assunto anterior. "
                             "Use conversa somente para saudações, agradecimentos, conversa casual "
                             "e perguntas sobre o histórico. Pedidos concretos fora do ACTA não são "
-                            "conversa, mesmo que possam ser respondidos com conhecimento geral."
+                            "conversa, mesmo que possam ser respondidos com conhecimento geral. "
+                            f"{EXEMPLOS_PERGUNTAS_OPERACIONAIS}"
                         ),
                         criteria={
                             "conversa": (
@@ -81,11 +104,18 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                                 "sobre o histórico desta conversa. Não inclua pedidos de conteúdo, "
                                 "código, receitas, recomendações ou informações gerais."
                             ),
-                            "negocio": "Solicitação relacionada ao ACTA.",
+                            "negocio": (
+                                "Solicitação relacionada ao ACTA, incluindo perguntas coloquiais "
+                                "sobre o próprio ciclo, tarefas de hoje, atrasos e treinamentos "
+                                "do ciclo. "
+                                f"{EXEMPLOS_PERGUNTAS_OPERACIONAIS}"
+                            ),
                             "fora_escopo": (
                                 "Qualquer pedido concreto não relacionado ao ACTA, seus recursos "
                                 "ou PDCA, incluindo código, receitas, recomendações e conteúdo "
-                                "geral. Use esta categoria para impedir que o pedido seja respondido."
+                                "geral. Não classifique como fora de escopo consultas curtas que "
+                                "possam se referir ao ciclo, às tarefas ou aos treinamentos no ACTA. "
+                                "Use esta categoria para impedir que pedidos alheios sejam respondidos."
                             ),
                         },
                     ),
@@ -107,7 +137,8 @@ def rotear(pergunta: str, contexto_conversa: str) -> dict:
                                 "encaminhada a este especialista? Só marque quando houver relação "
                                 "direta com o ACTA e com este domínio. Nunca encaminhe pedidos "
                                 "fora do ACTA, como código ou receita. Considere o contexto para "
-                                f"mensagens curtas de continuação. Domínio e exemplos: {description}"
+                                f"mensagens curtas de continuação. Domínio e exemplos deste "
+                                f"especialista: {description}"
                             ),
                         )
                         for name, description in DESCRICOES_ESPECIALISTAS.items()

@@ -58,6 +58,29 @@ def test_input_guardrail_approves_jev_category(monkeypatch) -> None:
     assert guardrail_entrada("Como organizo minha agenda?")["valido"] is True
 
 
+def test_app_suggested_questions_use_normal_jev_classification(monkeypatch) -> None:
+    questions = [
+        "Como está meu ciclo?",
+        "Quais tarefas tenho hoje?",
+        "Tenho algo atrasado?",
+        "Quais treinamentos devo fazer?",
+    ]
+    client = FakeJevClient("APROVADO")
+    monkeypatch.setattr(guardrail, "TypeSafeClient", lambda **_kwargs: client)
+
+    assert [guardrail_entrada(question)["valido"] for question in questions] == [
+        True,
+        True,
+        True,
+        True,
+    ]
+    assert [state for state in client.states] == [
+        {"mensagem_usuario": question} for question in questions
+    ]
+    criteria = "".join(guardrail._CRITERIOS_GUARDRAIL["APROVADO"])
+    assert "consultas operacionais do ACTA/PDCA" in criteria
+
+
 def test_input_guardrail_blocks_when_jev_is_unavailable(monkeypatch) -> None:
     class UnavailableJevClient(FakeJevClient):
         def system_one(self, *, state, questions):

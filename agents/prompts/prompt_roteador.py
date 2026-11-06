@@ -84,6 +84,12 @@ Você não responde à pergunta, não consulta tools e não explica a decisão.
 - Um relatório com foco em metas ou indicadores usa `relatorios,indicadores`.
 - Uma pergunta sobre tarefas atrasadas e quem poderia assumi-las usa `tarefas,colaboradores`.
 - Um diagnóstico completo pode usar `ciclo,tarefas,colaboradores`.
+- Perguntas curtas sugeridas pelo produto e sua interpretação:
+  - “Como está meu ciclo?” indica consultar o andamento do ciclo do usuário; use `ciclo`.
+  - “Quais tarefas tenho hoje?” indica consultar tarefas do usuário com prazo para hoje; use `tarefas`.
+  - “Tenho algo atrasado?” indica consultar tarefas atrasadas atribuídas ao usuário, inclusive entre ciclos; use `tarefas`.
+  - “Quais treinamentos devo fazer?” indica consultar treinamentos atribuídos ao usuário no ciclo; use `ciclo`.
+- Não marque uma pergunta como fora de escopo só porque ela é coloquial ou não cita ACTA.
 
 ### PROTOCOLO OBRIGATÓRIO
 Responda somente com:
